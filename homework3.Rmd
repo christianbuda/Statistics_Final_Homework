@@ -1,0 +1,2612 @@
+---
+title: "Homework 3"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r get colors, echo=FALSE}
+
+##### here we make some colors for later #####
+
+
+somecolornames = c('chocolate1', 'aquamarine1', 'chartreuse1', 'cornflowerblue', 'coral1', 'cyan1', 'brown1', 'darkgoldenrod1', 'darkolivegreen1', 'dodgerblue3', 'goldenrod1', 'indianred1', 'khaki', 'magenta1', 'olivedrab1', 'orangered', 'royalblue1', 'seagreen1', 'salmon', 'tomato', 'yellow', 'springgreen', 'steelblue', 'tan2', 'slateblue1', 'plum1')
+
+
+transparent_color <- function(color, alpha = 0.4) {
+
+  rgb_col <- col2rgb(color)/255
+
+  col <- rgb(rgb_col[1], rgb_col[2], rgb_col[3], alpha = alpha)
+
+  return(col)
+}
+
+somecolors = list()
+
+for( i in 1:length(somecolornames)) {
+  somecolors = append(somecolors, list(transparent_color(somecolornames[i], alpha = 0.4)))
+}
+
+
+```
+
+
+### Team
+* Buda
+* Pristerà
+* Sgroi
+
+# 1.
+
+
+For better clarity, we will briefly review some theory behind the model, and we will write explicitly the universal tests that we are going to implement.
+
+Given a random vector $\mathbf{X}\in\mathbb{R}^p$, we focus our attention to a linear structural equation model of the form:
+\begin{equation}
+X_j = \sum_{k\ :\ k\neq j}\mathbb{A}_{j,k}X_k + \epsilon_j
+\end{equation}
+with the $\epsilon_j$ IID from $N_1(0,\sigma^2)$ and $\mathbb{A}$ a $p\times p$ real matrix. We will interpret $\mathbb{A}$ as the adjacency matrix of a DAG; under this framework, we need to impose some constraint on $\mathbb{A}$ so that the corresponding graph will, indeed, be a DAG. Among the various constraints, we will impose that $\mathbb{A}_{i,i} = 0\ \ \ \forall i$ (to mantain acyclicity); this allows us to easily write the above equation in vector form:
+\begin{equation}
+\mathbf{X} = \mathbb{A}\mathbf{X} + \mathbf{\epsilon}
+\end{equation}
+
+It can be proven that the adjacency matrix of a DAG is such that $\det(\mathbb{I}_p-\mathbb{A})=1$, so that we can rewrite the equation above as:
+\begin{equation}
+\mathbf{X} = \left(\mathbb{I}_p-\mathbb{A}\right)^{-1}\mathbf{\epsilon} = \mathbb{B}\mathbf{\epsilon}
+\end{equation}
+with $\mathbb{B}\equiv(\mathbb{I}_p-\mathbb{A})$. It follows that $\mathbf{X}\sim N_p(\mathbf{0},\Sigma)$ with $\Sigma = \sigma^2\mathbb{B}\mathbb{B}^t$.
+
+Having found an explicit form for the distribution of $\mathbf{X}$, we can write the log-likelihood; given $\mathbf{X}_1,\dots,\mathbf{X}_n$ IID from $N_p(\mathbf{0},\Sigma)$, we have:
+\begin{align}
+\ell(\mathbb{A},\sigma^2) = -\frac{np}{2}log(2\pi\sigma^2) - \frac{1}{2\sigma^2}\sum_{i=1}^n \mathbf{X}_i^t\Sigma^{-1}\mathbf{X}_i = \\
+-\frac{np}{2}log(2\pi\sigma^2) - \frac{1}{2\sigma^2}\sum_{i=1}^n \mathbf{X}_i^t(\mathbb{I}_p-\mathbb{A})^t(\mathbb{I}_p-\mathbb{A})\mathbf{X}_i = \\
+-\frac{np}{2}log(2\pi\sigma^2) - \frac{n}{2\sigma^2}tr\left(\left(\mathbb{I}_p-\mathbb{A}\right)^t\left(\mathbb{I}_p-\mathbb{A}\right)\frac{1}{n}\sum_{i=1}^n \mathbf{X}_i^t\mathbf{X}_i\right)
+\end{align}
+
+
+# 2.
+
+
+### Tests of graph linkages
+
+Moving into the realm of hypothesis testing, we want to implement a universal testing procedure (as in Wasserman et Al.) based on the Likelihood Ratio Tests in Yuan et Al. The main tool needed to implement a universal testing procedure is **Theorem 1** from Wasserman et Al., we recall it here (adapted to our specific problem).
+
+Given a dataset $D$ of $2n$ data points, we define $\{D_0,D_1\}$ as a random partition of our dataset (for convenience in notation, we assume $\left| D_0 \right| = \left| D_1 \right| = n$). Let $\left(\widehat{\mathbb{A}}_1,\widehat{\sigma^2}_1\right)$ be the MLEs for the parameters $\mathbb{A}$ and $\sigma^2$ of our model, built using only $D_1$; and let's define $\mathcal{L}_0(\mathbb{A},\sigma^2)$ as the likelihood computed only using $D_0$. We define
+$$T_n(\mathbb{A},\sigma^2)\equiv \frac{\mathcal{L}_0\left(\widehat{\mathbb{A}}_1,\widehat{\sigma^2}_1\right)}{\mathcal{L}_0(\mathbb{A},\sigma^2)}$$
+and then
+$$C_n(\alpha) = \left\{ \left(\mathbb{A},\sigma^2\right)\in\Theta\times\mathbb{R}^+ : T_n(\mathbb{A},\sigma^2)\leq\frac{1}{\alpha} \right\}$$
+where $\Theta$ is the set of all real matrices that are adjacency matrices of some DAG.
+With these notations, **Theorem 1** states that *$C_n$ is a finite-sample $(1-\alpha)$ confidence set for $(\mathbb{A},\sigma^2)$*.
+
+With this powerful theorem already proven, we can go on and build our universal test for graph linkages; given a set $F$ of edges of our graph, let's define $H_0:\mathbb{A}_{j,k}=0\ \ \ \forall(j,k)\in F$ versus $H_a:not\ H_0$. Let's also define $\left(\widehat{\mathbb{A}}_0,\widehat{\sigma^2}_0\right)$ as the MLEs for $\mathbb{A}$ and $\sigma^2$ built under $H_0$ using only $D_0$; then the rejection region of the universal *split LRT* is $\left\{ U_n\equiv T_n\left(\widehat{\mathbb{A}}_0,\widehat{\sigma^2}_0\right) > \frac{1}{\alpha} \right\}$. Similarly, the rejection region of the universal *cross-fit LRT*  is $\left\{ W_n > \frac{1}{\alpha} \right\}$, with $W_n\equiv\frac{U_n+U_n^{swap}}{2}$ (where $U_n^{swap}$ is defined like $U_n$, after swapping the role of $D_0$ and $D_1$). **Theorem 3** in Wassermann et Al. states that *for any fixed $\alpha$, the split and cross-fit LRT control the type I error probability at level $\alpha$*.
+
+
+### Tests of directed pathway
+
+Given a set $F$ of edges that form a directed path in our graph, let's define $H_0:\exists(j,k)\in F:\mathbb{A}_{j,k}=0$ and $H_a:not\ H_0$.
+
+We can build a universal test of directed pathway starting from linkage tests: we can run $|F|$ single linkage tests and reject $H_0$ if all of the linkage tests rejects the null. If $F=\left\{(j_1,j_2),(j_2,j_3),\dots,(j_{|F|},j_{|F|+1})\right\}$, we can define
+$$U_n \equiv \min_{k\in\{1,\dots,|F|\}}{\frac{\mathcal{L}_0\left(\widehat{\mathbb{A}}_1,\widehat{\sigma^2}_1\right)}{\mathcal{L}_0\left(\widehat{\mathbb{A}}_{0,k},\widehat{\sigma^2}_{0,k}\right)}} = \frac{\mathcal{L}_0\left(\widehat{\mathbb{A}}_1,\widehat{\sigma^2}_1\right)}{\max\limits_{k\in\{1,\dots,|F|\}}{\mathcal{L}_0\left(\widehat{\mathbb{A}}_{0,k},\widehat{\sigma^2}_{0,k}\right)}}$$
+where $\forall k$, $\left(\widehat{\mathbb{A}}_{0,k},\widehat{\sigma^2}_{0,k}\right)$ are like in a *split LRT* graph linkage test for the null $H_{0,k}:\mathbb{A}_{j_k,j_{k+1}}=0$. For any fixed $\alpha$, the test described above becomes: reject $H_0$ if $U_n > \frac{1}{\alpha}$ (because if $U_n > \frac{1}{\alpha}$, then all of the $H_{0,k}$ are to be rejected).
+
+For this test we have:
+\begin{equation}
+\mathbb{P}\left(Type\ I\ Error\right) = \mathbb{P}\left(U_n>\frac{1}{\alpha}\middle| H_0\right) = \mathbb{P} \left(reject\ H_{0,k}\ \ \forall k\middle| H_0\right) = \mathbb{P}\left(\bigcap\limits_{k=1}^{|F|}\left\{reject\ H_{0,k}\right\}\middle|H_0\right)\leq \mathbb{P} \left(reject\ H_{0,1}\middle| H_0\right)\leq\alpha
+\end{equation}
+
+so that our universal directed pathway *split LRT* controls the type I error probability at level $\alpha$.
+
+Similarly, we can define $U_n^{swap}$ and $W_n$ as in the previous case, and, following the proof of **Theorem 3**, we can show that
+$$\mathbb{P}(W_n>\frac{1}{\alpha}) \leq \alpha \mathbb{E}\left[ \frac{U_n + U_n^{swap}}{2}\right] \leq \frac{\alpha}{2}\left( \mathbb{E}\left[\frac{\mathcal{L}_0\left(\widehat{\mathbb{A}}_1,\widehat{\sigma^2}_1\right)}{\mathcal{L}_0\left(\widehat{\mathbb{A}}_{0,1},\widehat{\sigma^2}_{0,1}\right)}\right] + \mathbb{E}\left[U_n^{swap}\right]\right) \leq \alpha $$
+
+where we intentionally left out the details behind the inequalities and the explicit form of $U_n^{swap}$. In particular, this shows that the universal directed pathway *cross-fit LRT* controls the type I error probability at level $\alpha$.
+
+Having written explicitly the form of the four tests, we are now going to implement them in `R`, to do this we will use the constrained and unconstrained MLEs computed by the `MLEdag()` function. Because the optimization in Li et Al. is done separately on $\sigma^2$ and on $\mathbb{A}$, we recall here the (usual) shape of the optimized variance in our specific case; given a data matrix $\mathbb{X}$ and fixing an adjacency matrix $\mathbb{A}$, the MLE for the variance is:
+\begin{align}
+\widehat{\sigma^2} = \frac{1}{np} \sum_{j=1}^p\sum_{i=1}^n \left( \mathbb{X}_{i,j} - \sum_{k\neq j} \mathbb{X}_{i,j} \mathbb{A}_{j,k}\right)^2 = \frac{1}{np} \sum_{j=1}^p\sum_{i=1}^n \left( \mathbb{X} \left(\mathbb{I}_p - \mathbb{A}\right)\right)_{i,j}^2 =\\
+\frac{1}{np} \sum_{i=1}^n \mathbf{X}_i^t \left(\mathbb{I}_p - \mathbb{A}\right)^t\left(\mathbb{I}_p - \mathbb{A}\right) \mathbf{X}_i = \frac{1}{p} \ tr\left(\left(\mathbb{I}_p-\mathbb{A}\right)^t\left(\mathbb{I}_p-\mathbb{A}\right)\frac{1}{n}\sum_{i=1}^n \mathbf{X}_i^t\mathbf{X}_i\right)
+\end{align}
+
+
+### Implementation
+We are now ready to implement the tests. We start by implementing the log-likelihood and the MLE for the variance.
+
+```{r test setup, message=FALSE, warning=FALSE}
+
+# libraries used throughout the homework
+suppressMessages( require(matrixStats, quietly = TRUE) )
+suppressMessages( require(clrdag, quietly = TRUE) )
+suppressMessages( require(igraph, quietly = TRUE) )
+suppressMessages( require(svMisc, quietly = TRUE ) )
+suppressMessages( require(readxl, quietly = TRUE ) )
+suppressMessages( require(latex2exp, quietly = TRUE ) )
+suppressMessages( require(ramify, quietly = TRUE ) )
+
+
+# trace function for better code clarity
+tr = function(A) sum(diag(A))
+
+
+# log-likelihood for our model
+logl = function(X, A, sigma2) {
+  
+  # returns the log likelihood for the SEM model
+  
+  n = dim(X)[1]
+  p = dim(X)[2]
+  
+  # the empirical covariance term
+  emp_cov = crossprod(X)/n
+  
+  # Id - A term
+  adj_A = diag(p) - A
+  
+  logl = - n*p * log(2 * pi * sigma2)/2 - n * tr(t(adj_A) %*% adj_A %*% emp_cov) / (2*sigma2)
+  return(logl)
+}
+
+
+# estimate of sigma like in Li et al.
+sigma2_hat = function(X,A) {
+  
+  # computes an estimate for the variance
+  # starting from the computed MLE for
+  # the adjacency matrix, like in Li et al.
+  
+  n = dim(X)[1]
+  p = dim(X)[2]
+  
+  # the empirical covariance term
+  emp_cov = crossprod(X)/n
+  
+  # Id - A term
+  adj_A = diag(p) - A
+  
+  
+  sigma2 = tr(t(adj_A) %*% adj_A %*% emp_cov) / p
+  return(sigma2)
+}
+
+```
+
+And now we implement the *split* and *cross-fit* *LRT* for graph linkages. Because of the way in which the tests are defined, it may be convenient to compute the *split LRT* alone (if one decides to use it beforehand), but it is not possible to compute the *cross-fit LRT* without also computing the *split LRT*; for this reason, we wrote two different functions but we ended up using only the one that computes the *cross-fit LRT*.
+
+```{r test graph linkages}
+
+split_lrt = function(X, A = NULL, Lambda = NULL, D, alpha = NULL, tau, mu, rho, random.state = NULL) {
+  
+  # this function computes the split LRT statistics
+  ## INPUT:
+  # X: the data matrix
+  # A: optional, initial value for the adjacency matrix for the optimization
+  # Lambda: optional, initial value for the acyclicity condition matrix for the optimization
+  # D: hypothesis matrix
+  # alpha: optional, targeted level for the test
+  # tau: tau is the threshold parameter in MLEdag
+  # mu: mu is the the sparsity parameter in MLEdag
+  # rho: tau is the ADMM dual parameter in MLEdag
+  # random.state: optional: random seed for the data split
+  
+  
+  n = dim(X)[1]
+  p = dim(X)[2]
+  
+  
+  # set random state if requested
+  if (!is.null(random.state)) {
+    set.seed(random.state)
+  }
+  
+  
+  # split dataset in 2 random parts
+  idxTr = sample(1:n, size = floor(n/2))
+  idxTe = which(! 1:n %in% idxTr)
+  
+  # compute the adjacency matrix under the null on the Train set
+  outTr = MLEdag(X = X[idxTr,], D = D, tau = tau, mu = mu, 
+                    rho = rho, trace_obj = FALSE)
+  
+  theta0_Tr = outTr$A.H0  # adjacency matrix under the null
+  theta_Tr = outTr$A.H1   # uncostrained adjacency matrix
+  
+  
+  # get the uncostrained adjacency matrix on the Test set
+  outTe = MLEdag(X = X[idxTe,], tau = tau, mu = mu, 
+                    rho = rho, trace_obj = FALSE)
+  
+  theta_Te = outTe$A   # uncostrained adjacency matrix on the Test set
+  
+  
+  # compute the estimates for the variance
+  sigma2_H0_Tr = sigma2_hat(X[idxTr,], theta0_Tr)  # under H0 on Train set
+  sigma2_Te = sigma2_hat(X[idxTe,], theta_Te)      # uncostrained on Test set
+  
+  # split LRT statistics
+  Un = logl(X[idxTr,], theta_Te, sigma2_Te) - logl(X[idxTr,], theta0_Tr, sigma2_H0_Tr)
+  
+  
+  if(is.null(alpha)) {
+    
+    # if alpha is not chosen only the statistics is returned
+    result = list('logsplitLRT' = Un)
+    
+  } else {
+    
+    # if alpha is chosen, a test is performed and the result is returned
+    reject = (Un > log(1/alpha))
+    result = list('logsplitLRT' = Un, 'rejectH0' = reject, 'retainH0' = !reject, 'TestType' = 'SLRT')
+    
+  }
+  
+  return(result)
+}
+
+
+crossfit_lrt = function(X, A = NULL, Lambda = NULL, D, alpha = NULL, tau, mu, rho, random.state = NULL) {
+  
+  # this function computes the crossfit and the split LRT statistics
+  ## INPUT:
+  # X: the data matrix
+  # A: optional, initial value for the adjacency matrix for the optimization
+  # Lambda: optional, initial value for the acyclicity condition matrix for the optimization
+  # D: hypothesis matrix
+  # alpha: optional, targeted level for the test
+  # tau: tau is the threshold parameter in MLEdag
+  # mu: mu is the the sparsity parameter in MLEdag
+  # rho: tau is the ADMM dual parameter in MLEdag
+  # random.state: optional: random seed for the data split
+  
+  
+  n = dim(X)[1]
+  p = dim(X)[2]
+  
+  
+  # set random state if requested
+  if (!is.null(random.state)) {
+    set.seed(random.state)
+  }
+  
+  
+  # split dataset in 2 random parts
+  idxTr = sample(1:n, size = floor(n/2))
+  idxTe = which(! 1:n %in% idxTr)
+  
+  # compute the adjacency matrices on the Train set
+  outTr = MLEdag(X = X[idxTr,], D = D, tau = tau, mu = mu, 
+                    rho = rho, trace_obj = FALSE)
+  
+  theta0_Tr = outTr$A.H0  # under H0 on Train set
+  theta_Tr = outTr$A.H1   # uncostrained on Train set
+  
+  
+  # compute the adjacency matrices on the Test set
+  outTe = MLEdag(X = X[idxTe,], D = D, tau = tau, mu = mu, 
+                    rho = rho, trace_obj = FALSE)
+  
+  theta0_Te = outTe$A.H0  # under H0 on Test set
+  theta_Te = outTe$A.H1   # uncostrained on Test set
+  
+  
+  # compute the estimates for the variances
+  variances = matrix(0, ncol = 2, nrow = 2)
+  dimnames(variances) = list(c('H0', 'H1'), c('Tr', 'Te'))
+  
+  variances['H0', 'Tr'] = sigma2_hat(X[idxTr,], theta0_Tr)
+  variances['H1', 'Tr'] = sigma2_hat(X[idxTr,], theta_Tr)
+  variances['H0', 'Te'] = sigma2_hat(X[idxTe,], theta0_Te)
+  variances['H1', 'Te'] = sigma2_hat(X[idxTe,], theta_Te)
+  
+  
+  # computes the split logLRTs statistics
+  Un = logl(X[idxTr,], theta_Te, variances['H1', 'Te']) - logl(X[idxTr,], theta0_Tr, variances['H0', 'Tr'])
+  Un_swap = logl(X[idxTe,], theta_Tr, variances['H1', 'Tr']) - logl(X[idxTe,], theta0_Te, variances['H0', 'Te'])
+  
+  # cross-fit LRT statistics
+  Wn = logSumExp(c(Un, Un_swap))-log(2)
+  
+  if(is.null(alpha)) {
+    
+    # if alpha is not chosen only the statistics are returned
+    result = list('logsplitLRT' = Un, 'swap_logsplitLRT' = Un_swap, 'logcrossfitLRT' = Wn)
+    
+  } else {
+    
+    # if alpha is chosen, a cross-fit LRT test is performed and the result is returned
+    reject = (Wn > log(1/alpha))
+    result = list('logsplitLRT' = Un, 'swap_logsplitLRT' = Un_swap, 'logcrossfitLRT' = Wn, 'rejectH0' = reject, 'retainH0' = !reject, 'TestType' = 'CFLRT')
+    
+  }
+  
+  return(result)
+}
+
+
+```
+
+As in the graph linkages case, we implement here the *split* and *cross-fit* *LRT* tests for directed pathways.
+
+```{r test directed pathways}
+
+get_constrained_adjacency = function(X, A, D) {
+  # snippet of code from MLEdag()
+  # this function computes the H0-constrained adjacency matrix
+  # starting from the unconstrained
+  
+  # using this function is more efficient than calling
+  # MLEdag several times just to get A0
+  
+  n <- nrow(X)
+  p <- ncol(X)
+  
+  XTX <- crossprod(X)
+  NZ <- (A != 0)
+  df <- sum(NZ * D != 0)
+  A0 <- matrix(0, p, p)
+  for (i in 1:p) {
+      idx <- which(A[i, ] != 0)
+      if (length(idx) > 0) {
+          A[i, idx] <- solve(XTX[idx, idx] + 1e-04 * diag(length(idx))) %*% 
+            XTX[idx, i]
+      }
+      idx <- which(A[i, ] != 0 & D[i, ] == 0)
+      if (length(idx) > 0) {
+          A0[i, idx] <- solve(XTX[idx, idx] + 1e-04 * diag(length(idx))) %*% 
+            XTX[idx, i]
+      }
+  }
+  
+  return(A0)
+}
+
+
+pathway_split_lrt = function(X, A = NULL, Lambda = NULL, F_matrix, alpha = NULL, tau, mu, rho, random.state = NULL) {
+  
+  # this function computes the crossfit and the split LRT statistics
+  ## INPUT:
+  # X: the data matrix
+  # A: optional, initial value for the adjacency matrix for the optimization
+  # Lambda: optional, initial value for the acyclicity condition matrix for the optimization
+  # F_matrix: pathway hypothesis matrix (two columns and one row for each hypothesized link)
+  # alpha: optional, targeted level for the test
+  # tau: tau is the threshold parameter in MLEdag
+  # mu: mu is the the sparsity parameter in MLEdag
+  # rho: tau is the ADMM dual parameter in MLEdag
+  # random.state: optional: random seed for the data split
+  
+  
+  n = dim(X)[1]
+  p = dim(X)[2]
+  nlinks = nrow(F_matrix)
+  
+  
+  # set random state if requested
+  if (!is.null(random.state)) {
+    set.seed(random.state)
+  }
+  
+  
+  # split dataset in 2 random parts
+  idxTr = sample(1:n, size = floor(n/2))
+  idxTe = which(! 1:n %in% idxTr)
+  
+  
+  
+  
+  ############################################################
+  # here we get the adjacency matrices under the various nulls
+  # to do it we run nlinks different tests
+  # and we collect the results
+  
+  # first null hypothesis
+  D = matrix(0, ncol = p, nrow = p)
+  D[F_matrix[1,1], F_matrix[1,2]] = 1
+  
+  # compute the adjacency matrices on the Train set
+  outTr = MLEdag(X = X[idxTr,], D = D, tau = tau, mu = mu, 
+                    rho = rho, trace_obj = FALSE)
+  
+  # the uncostrained adjacency matrix is the same for every null
+  # so we only compute it once
+  theta_Tr = outTr$A.H1
+  
+  
+  theta0_Tr = list(outTr$A.H0)  # on Train set under the first null
+  
+  for (i in 2:nlinks) {
+    
+    # setting up the various nulls
+    D = matrix(0, ncol = p, nrow = p)
+    D[F_matrix[i,1], F_matrix[i,2]] = 1
+    
+    adjacency_matrix = get_constrained_adjacency(X = X[idxTr,], A = theta_Tr, D = D)
+    
+    # append the results
+    theta0_Tr = append(theta0_Tr, list(adjacency_matrix) )
+  }
+  
+  ############################################################
+  
+  
+  # compute the adjacency matrix on the Test set
+  outTe = MLEdag(X = X[idxTe,], tau = tau, mu = mu, 
+                    rho = rho, trace_obj = FALSE)
+  
+  theta_Te = outTe$A  # unconstrained on Test set
+  
+  
+  #####
+  # compute the estimates for the variance
+  
+  sigma2_Te = sigma2_hat(X[idxTe,], theta_Te)  # unconstrained on Test set
+  
+  sigma2_H0_Tr = c()
+  for (i in 1:nlinks) {
+    
+    var_estimate = sigma2_hat(X[idxTr,], theta0_Tr[[i]])  # under H0i on Train set
+    
+    # append the results
+    sigma2_H0_Tr = c(sigma2_H0_Tr, var_estimate)
+  }
+  #####
+  
+  
+  #####
+  # compute the log-likelihoods for the various nulls on the Train set
+  logl_H0 = c()
+  for (i in 1:nlinks) {
+    
+    logl_value = logl(X[idxTr,], theta0_Tr[[i]], sigma2_H0_Tr[i])
+    
+    # append the results
+    logl_H0 = c(logl_H0, logl_value)
+  }
+  #####
+  
+  
+  # computes the split logLRT statistics
+  Un = logl(X[idxTr,], theta_Te, sigma2_Te) - max(logl_H0)
+  
+  
+  if(is.null(alpha)) {
+    
+    # if alpha is not chosen only the statistics is returned
+    result = list('logsplitLRT' = Un)
+    
+  } else {
+    
+    # if alpha is chosen, a cross-fit LRT test is performed and the result is returned
+    reject = (Un > log(1/alpha))
+    result = list('logsplitLRT' = Un, 'rejectH0' = reject, 'retainH0' = !reject, 'TestType' = 'SLRT')
+    
+  }
+  
+  return(result)
+}
+
+
+pathway_crossfit_lrt = function(X, A = NULL, Lambda = NULL, F_matrix, alpha = NULL, tau, mu, rho, random.state = NULL) {
+  
+  # this function computes the crossfit and the split LRT statistics
+  ## INPUT:
+  # X: the data matrix
+  # A: optional, initial value for the adjacency matrix for the optimization
+  # Lambda: optional, initial value for the acyclicity condition matrix for the optimization
+  # F_matrix: pathway hypothesis matrix (two columns and one row for each hypothesized link)
+  # alpha: optional, targeted level for the test
+  # tau: tau is the threshold parameter in MLEdag
+  # mu: mu is the the sparsity parameter in MLEdag
+  # rho: tau is the ADMM dual parameter in MLEdag
+  # random.state: optional: random seed for the data split
+  
+  
+  n = dim(X)[1]
+  p = dim(X)[2]
+  nlinks = dim(F_matrix)[1]
+  
+  
+  # set random state if requested
+  if (!is.null(random.state)) {
+    set.seed(random.state)
+  }
+  
+  
+  # split dataset in 2 random parts
+  idxTr = sample(1:n, size = floor(n/2))
+  idxTe = which(! 1:n %in% idxTr)
+  
+  
+  
+  ############################################################
+  # here we get the adjacency matrices under the various nulls for the Train set
+  # to do it we run nlinks different tests
+  # and we collect the results
+  
+  # first null hypothesis
+  D = matrix(0, ncol = p, nrow = p)
+  D[F_matrix[1,1], F_matrix[1,2]] = 1
+  
+  
+  # compute the adjacency matrices on the Train set
+  outTr = MLEdag(X = X[idxTr,], D = D, tau = tau, mu = mu, 
+                    rho = rho, trace_obj = FALSE)
+  
+  # the uncostrained adjacency matrix is the same for every null
+  # so we only compute it once
+  theta_Tr = outTr$A.H1
+  
+  theta0_Tr = list(outTr$A.H0)  # on Train set under the first null
+  
+  
+  for (i in 2:nlinks) {
+    
+    # setting up the various nulls
+    D = matrix(0, ncol = p, nrow = p)
+    D[F_matrix[i,1], F_matrix[i,2]] = 1
+    
+    adjacency_matrix = get_constrained_adjacency(X = X[idxTr,], A = theta_Tr, D = D)
+    
+    # append the results
+    theta0_Tr = append(theta0_Tr, list(adjacency_matrix) )
+  }
+  
+  ############################################################
+  
+  
+  ############################################################
+  # here we get the adjacency matrices under the various nulls for the Test set
+  # to do it we run nlinks different tests
+  # and we collect the results
+  
+  # first null hypothesis
+  D = matrix(0, ncol = p, nrow = p)
+  D[F_matrix[1,1], F_matrix[1,2]] = 1
+  
+  # compute the adjacency matrices on the Test set
+  outTe = MLEdag(X = X[idxTe,], D = D, tau = tau, mu = mu, 
+                    rho = rho, trace_obj = FALSE)
+  
+  # the uncostrained adjacency matrix is the same for every null
+  # so we only compute it once
+  theta_Te = outTe$A.H1
+  
+  theta0_Te = list(outTe$A.H0)  # on Test set under the first null
+  
+  
+  for (i in 2:nlinks) {
+    
+    # setting up the various nulls
+    D = matrix(0, ncol = p, nrow = p)
+    D[F_matrix[i,1], F_matrix[i,2]] = 1
+    
+    adjacency_matrix = get_constrained_adjacency(X = X[idxTe,], A = theta_Te, D = D)
+    
+    # append the results
+    theta0_Te = c(theta0_Te, list(adjacency_matrix) )
+  }
+  
+  ############################################################
+  
+  
+  #####
+  # compute the estimates for the variances
+  
+  sigma_Tr = sigma2_hat(X[idxTr,], theta_Tr)   # unconstrained on Train set
+  sigma_Te = sigma2_hat(X[idxTe,], theta_Te)   # unconstrained on Test set
+  
+  sigma2_H0_Tr = c()
+  sigma2_H0_Te = c()
+  for (i in 1:nlinks) {
+    
+    var_estimate_Tr = sigma2_hat(X[idxTr,], theta0_Tr[[i]])  # under H0i on Train set
+    var_estimate_Te = sigma2_hat(X[idxTe,], theta0_Te[[i]])  # under H0i on Test set
+    
+    
+    # append the results
+    sigma2_H0_Tr = c(sigma2_H0_Tr, var_estimate_Tr)
+    sigma2_H0_Te = c(sigma2_H0_Te, var_estimate_Te)
+  }
+  
+  #####
+  
+  
+  #####
+  # compute the log-likelihoods for the various nulls
+  logl_H0_Tr = c()
+  logl_H0_Te = c()
+  for (i in 1:nlinks) {
+    
+    logl_value_Tr = logl(X[idxTr,], theta0_Tr[[i]], sigma2_H0_Tr[i])
+    logl_value_Te = logl(X[idxTe,], theta0_Te[[i]], sigma2_H0_Te[i])
+    
+    # append the results
+    logl_H0_Tr = c(logl_H0_Tr, logl_value_Tr)
+    logl_H0_Te = c(logl_H0_Te, logl_value_Te)
+  }
+  
+  #####
+  
+  # computes the split logLRT statistics
+  Un = logl(X[idxTr,], theta_Te, sigma_Te) - max(logl_H0_Tr)
+  Un_swap = logl(X[idxTe,], theta_Tr, sigma_Tr) - max(logl_H0_Te)
+  
+  # cross-fit LRT statistics
+  Wn = logSumExp(c(Un, Un_swap))-log(2)
+  
+  if(is.null(alpha)) {
+    
+    # if alpha is not chosen only the statistics is returned
+    result = list('logsplitLRT' = Un, 'swap_logsplitLRT' = Un_swap, 'logcrossfitLRT' = Wn)
+    
+  } else {
+    
+    # if alpha is chosen, a cross-fit LRT test is performed and the result is returned
+    reject = (Wn > log(1/alpha))
+    result = list('logsplitLRT' = Un, 'swap_logsplitLRT' = Un_swap, 'logcrossfitLRT' = Wn, 'rejectH0' = reject, 'retainH0' = !reject, 'TestType' = 'CFLRT', 'split_rejectH0' = (Un > log(1/alpha)))
+    
+  }
+  
+  return(result)
+}
+
+```
+
+
+
+# 3.
+
+We chose 3 different DAGs to simulate from to study size and power of our universal tests.
+
+Following the lines of Li et Al., we chose a *hub* and a random *sparse* graph to be able to compare our results with the ones in the original article (to be able to see the difference between our finite-sample tests and the asymptotics). Unfortunately, using the exact same parameters of the articles was computationally too demanding, so we had to tune down a bit the number of nodes in the two graphs. The results are strongly dependent from the relationship between the number of nodes and the number of samples in each replicate of the simulation, so the comparison will not be as accurate as it should; nonetheless, we hope it will give some general indication of the potential of these tests.
+
+Here we show the *hub* graph used in our simulations.
+```{r test graphs: hub, fig.width = 6, fig.asp = 1}
+
+# set random seed for reproducibility
+set.seed(2898)
+
+# number of nodes
+p <- 42
+
+
+# adjacency matrix
+A_hub <- matrix(0,p,p)
+A_hub[,42] <- sample(c(-1,1), p, replace = TRUE)
+
+# remove self connection
+A_hub[42,42] <- 0
+
+
+################# graph plot #################
+g  <- graph.adjacency(A_hub, weighted = TRUE)
+
+V(g)$color    <- "gold"
+V(g)$color[42] <- "green" # Hub
+
+
+plot( g, 
+     edge.arrow.size = .42,
+     vertex.frame.color = "gray", vertex.label.color = "black", 
+     vertex.label.cex = 1, vertex.label.dist = 0, edge.curved = 0.2,
+     layout = layout_with_gem)
+
+legend('topright',legend=c('Hub node'),pt.cex=3,col='black',pch=21, pt.bg='green')
+
+```
+
+
+Here we show the *sparse* graph used in our simulations.
+```{r test graphs: sparse, fig.width = 6, fig.asp = 1}
+
+# set random seed for reproducibility
+set.seed(2899)
+
+# number of nodes
+p <- 42
+
+
+# adjacency matrix
+sparsity <- 1/p
+A_sparse <- matrix(rbinom(p*p,1,sparsity)*sign(runif(p*p,min=-1,max=1)),p,p)
+A_sparse[upper.tri(A_sparse, diag = T)] <- 0
+
+
+###################### graph plot ######################
+g  <- graph.adjacency(abs(A_sparse), weighted = TRUE)
+
+
+plot( g, 
+     edge.arrow.size = 0.042,
+     vertex.frame.color = "gray", vertex.size=4, vertex.label = NA, edge.curved = 0.2,
+     layout = layout_with_mds )
+
+
+```
+
+For the purpose of evaluating the performance of our tests in a framework like the second part of this homework, we implemented the DAG that Sachs et Al. found by reviewing conventionally accepted signaling interactions between the measured biomolecules. Here we show a representation of this *literature* graph.
+```{r test literature: real, fig.width = 6, fig.asp = 1}
+
+# set random seed for reproducibility
+set.seed(2898)
+
+# graph nodes
+cell_names = 1:11
+names(cell_names) = c('praf', 'pmek',	'plcg',	'PIP2',	'PIP3',	'p44/42',	'pakts473',	'PKA',	'PKC',	'P38',	'pjnk')
+
+
+# adjacency matrix
+A_literature = matrix(0, ncol = length(cell_names), nrow = length(cell_names))
+dimnames(A_literature) = list(names(cell_names), names(cell_names))
+
+A_literature['praf', 'pmek'] = 1
+A_literature['pmek', 'p44/42'] = 1
+A_literature['plcg', 'PKC'] = 1
+A_literature['plcg', 'PIP2'] = 1
+A_literature['PIP2', 'PKC'] = 1
+A_literature['PIP3', 'PIP2'] = 1
+A_literature['PIP3', 'plcg'] = 1
+A_literature['PIP3', 'pakts473'] = 1
+A_literature['PKA', 'P38'] = 1
+A_literature['PKA', 'pjnk'] = 1
+A_literature['PKA', 'pakts473'] = 1
+A_literature['PKA', 'pmek'] = 1
+A_literature['PKA', 'p44/42'] = 1
+A_literature['PKA', 'praf'] = 1
+A_literature['PKC', 'P38'] = 1
+A_literature['PKC', 'pjnk'] = 1
+A_literature['PKC', 'praf'] = 1
+A_literature['PKC', 'pmek'] = 1
+
+
+
+#################### graph plot ####################
+g  <- graph.adjacency(A_literature, weighted = TRUE)
+
+V(g)$color[cell_names[c('praf', 'pmek',	'plcg', 'p44/42',	'pakts473',	'PKA',	'PKC',	'P38',	'pjnk')]] <- "red"
+V(g)$color[cell_names[c('PIP2',	'PIP3')]] <- "gold"
+
+V(g)$size = 20
+V(g)$size[cell_names['pakts473']] = 28
+V(g)$size[cell_names['p44/42']] = 25
+
+E(g)$color = 'blue'
+
+plot( g, 
+     edge.arrow.size = 0.42 * 2,
+     vertex.frame.color = "black", vertex.label.color = "black",
+     vertex.label.cex = 0.8, vertex.label.dist = 0, edge.curved = 0,
+     layout = layout_with_graphopt )
+
+
+legend('topright',legend=c('Phospho-Proteins', 'Phospho-Lipids'),pt.cex=3,col='black',pch=21, pt.bg=c('gold', 'red'), cex = 1.5)
+
+```
+
+
+For the purpose of these performance measures, we simulated from the DAGs described above by following the model mentioned in the previous section, fixing a unit variance $\sigma^2 = 1$ for the noise (we will talk about this choice in more detail later on).
+
+
+Because of the way in which the tests are implemented, their execution requires one to fix some technical parameters:
+
+* the starting value for the adjacency matrix $\mathbb{A}$ for the optimization algorithm
+* the starting value for the acyclicity conditions matrix $\Lambda$ for the optimization algorithm
+* the sparsity parameter $\kappa$
+* the threshold parameter $\tau$
+* the ADMM dual parameter $\rho$
+
+More informations about these parameters can be found in Yuan et Al., Li et Al., and in the manual page of `MLEdag()`.
+
+We decided to leave the starting values mentioned above as an automatic choice to the algorithm, and we ran some tests on the other parameters (not reported in this document) that showed very low sensitivity to their tuning.
+These choices were mainly dictated by time constraints. One may want to explore a bit more the influence of these parameters on Size and Power of the tests.
+
+Because of the computational intensity of these simulations (some of which lasted up to 18 hours), we ran our simulation just once and stored the results on the disk. For this reason, the code of the simulation is shown but not run here.
+
+## Size
+
+```{r simulation functions}
+
+simulation = function(A, solved, D, n, p, tau, mu, rho) {
+  # function used as a single iteration for the simulations
+  
+  # sample generation
+  X <- matrix(rnorm(n*p), n, p) %*% solved
+  
+  # computation of the statistics
+  out = crossfit_lrt(X, A = A, D = D, tau = tau, mu = mu, rho = rho)
+  
+  return(c('Un' = out$logsplitLRT, 'Wn' = out$logcrossfitLRT))
+}
+
+
+simulation_asymptotics = function(A, solved, D, n, p, tau, mu, rho) {
+  # function useful for a comparison with the tests based on the asymptotics
+  
+  # sample generation
+  X <- matrix(rnorm(n*p), n, p) %*% solved
+  
+  # computation of the statistics
+  out = MLEdag(X, D = D, tau = tau, mu = mu, rho = rho, trace_obj = FALSE)
+  
+  return(c('pval' = out$pval, 'lrt' = out$lrt))
+}
+
+```
+
+
+### Hub
+To evaluate the size of the tests for the *hub* graph, we simulated under the null hypothesis of absence of two edges (shown here in red but not present in the graph) for a total of $1000$ iterations. We repeated this simulation $5$ times for different values of the sample size.
+```{r Hub graph size sim, fig.width = 6, fig.asp = 1}
+
+# this simulation is veeeery slow
+# do not start it unless you are prepared to several
+# hours of multi-threaded computations
+simulate = FALSE
+
+
+# set random seed for reproducibility
+set.seed(2898)
+
+
+# select hub graph
+p = 42
+M = 1000
+A = A_hub
+
+### H0: F = { (21,23), (1,3) }, and A[F] = 0
+D <- matrix(0, p, p)
+D[21,23] = 1
+D[1,3] = 1
+
+
+############### Graph plot ###############
+g  <- graph.adjacency(A, weighted = TRUE)
+
+V(g)$color    <- "gold"
+V(g)$color[42] <- "green" # Hub
+
+E(g)$color = 'gray'
+g = g %>% add_edges(c(21,23, 1,3))   # add the fake edges
+E(g)$color[is.na(E(g)$color)] = 'red'
+
+plot( g, 
+     edge.arrow.size = .42,
+     vertex.frame.color = "gray", vertex.label.color = "black", 
+     vertex.label.cex = 1, vertex.label.dist = 0, edge.curved = 0,
+     layout = layout_with_gem )
+
+
+legend('topleft',legend=c('Real edge', TeX('Edge under $H_a$')), col = c('gray','red'), lty = 1, cex = 0.9)
+
+
+
+
+# Simulation
+
+n_vec =  c(10, 50, 420, 840, 4200)
+
+
+
+if(simulate) {
+  
+  results = list()
+  
+  start_time = Sys.time()
+  
+  for ( i in 1:length(n_vec)) {
+    n = n_vec[i]
+    
+    # SIMULATION
+    result = replicate(M, simulation(A = A, solved = t(solve(diag(p) - A)), D = D, n = n, p = p, tau = 0.35, mu = 42/42, rho = 1.2), simplify = TRUE)
+    
+    results = append(results, list(result))  # store results
+    progress(i, length(n_vec))  # progress bar
+  }
+  
+  
+  # taking timings
+  elapsed_time = Sys.time() - start_time
+  cat('The simulation took', elapsed_time, units(elapsed_time),'\n\n')
+  
+  
+  # save the results on the disk
+  saveRDS(results, 'size_hub.rds')
+  
+}
+
+```
+And here we show the results. We marked for convenience a *rejection boundary* at $0$ since negative values of either statistics will always reject the null.
+
+```{r Hub graph size analysis, fig.width = 10, fig.asp = 1, echo = FALSE}
+
+# retrieve results from the disk
+results <- readRDS("size_hub.rds")
+
+
+
+par(mfrow = c(2,2))
+
+
+## Un
+
+
+hist(results[[1]]['Un',], probability = T, breaks = 100, xlim = c(-30000,0), col = somecolors[[1]], border = somecolornames[1], main = TeX('$U_n$'), xlab = '', ylab = '')
+hist(results[[2]]['Un',], probability = T, breaks = 50, col = somecolors[[2]], border = somecolornames[2], add = T)
+
+abline(v = 0, col=somecolornames[4], lwd=3, lty=2)
+legend("center", c("n = 10", "n = 50", 'Rejection boundary'), fill=c(somecolors[[1]], somecolors[[2]], somecolornames[4]))
+
+
+
+hist(results[[3]]['Un',], probability = T, ylim = c(0,0.045), breaks = 20, col = somecolors[[7]], border = somecolornames[7], main = TeX('$U_n$'), xlab = '', ylab = '')
+hist(results[[4]]['Un',], probability = T, breaks = 5, col = somecolors[[6]], add = T, border = somecolornames[6])
+hist(results[[5]]['Un',], probability = T, breaks = 5, col = somecolors[[8]], add = T, border = somecolornames[8])
+
+abline(v = 0, col=somecolornames[4], lwd=3, lty=2)
+legend("left", c("n = 420", "n = 840", "n = 4200", 'Rejection boundary'), fill=c(somecolors[[7]], somecolors[[6]], somecolors[[8]], somecolornames[4]))
+
+
+
+## Wn
+
+
+hist(results[[1]]['Wn',], probability = T, breaks = 20, col = somecolors[[1]], border = somecolornames[1], main = TeX('$W_n$'), xlab = '', ylab = '')
+hist(results[[2]]['Wn',], probability = T, breaks = 20, col = somecolors[[2]], border = somecolornames[2], add = T)
+
+abline(v = 0, col=somecolornames[4], lwd=3, lty=2)
+legend("center", c("n = 10", "n = 50", 'Rejection boundary'), fill=c(somecolors[[1]], somecolors[[2]], somecolornames[4]))
+
+
+
+hist(results[[3]]['Wn',], probability = T, ylim = c(0,0.045), breaks = 20, col = somecolors[[7]], border = somecolornames[7], main = TeX('$W_n$'), xlab = '', ylab = '')
+hist(results[[4]]['Wn',], probability = T, breaks = 5, col = somecolors[[6]], add = T, border = somecolornames[6])
+hist(results[[5]]['Wn',], probability = T, breaks = 5, col = somecolors[[8]], add = T, border = somecolornames[8])
+
+abline(v = 0, col=somecolornames[4], lwd=3, lty=2)
+legend("right", c("n = 420", "n = 840", "n = 4200", 'Rejection boundary'), fill=c(somecolors[[7]], somecolors[[6]], somecolors[[8]], somecolornames[4]))
+
+
+```
+
+Oddly enough, for $n = 10$, $n = 50$, $n = 840$, $n = 4200$, both tests always reject the null, hence the computed size is $0$. Both tests have some positive value for $n = 420$ ($1$ value for $U_n$ and $3$ values for $W_n$); it can be verified from these data that the tests are effectively sized $\alpha$ for every fixed (sensible) choice of $\alpha$. As a reference for this last sample size, for $\alpha = 0.05$ the $U_n$ statistic has a size of $0.001$, while $W_n$ has a size of $0.003$.
+
+From Li et al. we can also see that our tests have a lower type I error probability with respect to the corresponding test (i.e. in the most similar configuration of $n=500$ and $p=50$) based on the asymptotic distribution of the LRT, which has a size of $0.049$.
+
+
+
+### Sparse
+As in the previous case, to evaluate the size of the tests for the *sparse* graph, we simulated under the null hypothesis of absence of two edges (shown here in red but not present in the graph) for a total of $1000$ iterations. We repeated this simulation $5$ times for different values of the sample size.
+```{r Sparse graph size sim, fig.width = 6, fig.asp = 1}
+
+# this simulation is veeeery slow
+# do not start it unless you are prepared to several
+# hours of multi-threaded computations
+simulate = FALSE
+
+
+
+# set random seed for reproducibility
+set.seed(2899)
+
+# select sparse graph
+p = 42
+M = 1000
+A = A_sparse
+
+
+
+### H0: F = { (21,11), (13,7) }, and A[F] = 0
+D <- matrix(0, p, p)
+D[21, 11] = 1
+D[13, 7] = 1
+
+
+
+
+############### Graph plot ###############
+g  <- graph.adjacency(abs(A), weighted = TRUE)
+
+V(g)$color    <- "gold"
+
+E(g)$color = 'gray'
+g = g %>% add_edges(c(21,11, 13,7))   # add the fake edges
+E(g)$color[is.na(E(g)$color)] = 'red'
+
+
+plot( g, 
+     edge.arrow.size = 0.042,
+     vertex.frame.color = "gray", vertex.size=6, vertex.label = NA, edge.curved = 0.2,
+     layout = layout_with_mds )
+
+
+
+legend('topleft',legend=c('Real edge', TeX('Edge under $H_a$')), col = c('gray','red'), lty = 1)
+
+
+
+
+
+# Simulation
+
+n_vec =  c(10, 50, 420, 840, 4200)
+
+
+
+if(simulate) {
+  
+  results = list()
+  
+  start_time = Sys.time()
+  
+  for ( i in 1:length(n_vec)) {
+    n = n_vec[i]
+    
+    # SIMULATION
+    result = replicate(M, simulation(A = A, solved = t(solve(diag(p) - A)), D = D, n = n, p = p, tau = 0.35, mu = 42/42, rho = 1.2), simplify = TRUE)
+    
+    results = append(results, list(result))  # store results
+    progress(i, length(n_vec))  # progress bar
+  }
+  
+  
+  # taking timings
+  elapsed_time = Sys.time() - start_time
+  cat('The simulation took', elapsed_time, units(elapsed_time),'\n\n')
+  
+  
+  # save the results on the disk
+  saveRDS(results, 'size_sparse.rds')
+  
+}
+
+
+
+```
+
+And here we show the results. We marked for convenience a *rejection boundary* at $0$ since negative values of either statistics will always reject the null.
+
+```{r Sparse graph size analysis, fig.width = 10, fig.asp = 1, echo = FALSE}
+
+
+# retrieve results from the disk
+results <- readRDS("size_sparse.rds")
+
+
+par(mfrow = c(2,2))
+
+
+## Un
+
+
+hist(results[[1]]['Un',], probability = T, breaks = 100, xlim = c(-30000,0), col = somecolors[[1]], border = somecolornames[1], main = TeX('$U_n$'), xlab = '', ylab = '')
+hist(results[[2]]['Un',], probability = T, breaks = 100, col = somecolors[[2]], border = somecolornames[2], add = T)
+
+abline(v = 0, col=somecolornames[4], lwd=3, lty=2)
+legend("center", c("n = 10", "n = 50", 'Rejection boundary'), fill=c(somecolors[[1]], somecolors[[2]], somecolornames[4]))
+
+
+
+hist(results[[3]]['Un',], probability = T, ylim = c(0,0.065), breaks = 20, col = somecolors[[7]], border = somecolornames[7], main = TeX('$U_n$'), xlab = '', ylab = '')
+hist(results[[4]]['Un',], probability = T, breaks = 20, col = somecolors[[6]], add = T, border = somecolornames[6])
+hist(results[[5]]['Un',], probability = T, breaks = 5, col = somecolors[[8]], add = T, border = somecolornames[8])
+
+abline(v = 0, col=somecolornames[4], lwd=3, lty=2)
+legend("left", c("n = 420", "n = 840", "n = 4200", 'Rejection boundary'), fill=c(somecolors[[7]], somecolors[[6]], somecolors[[8]], somecolornames[4]))
+
+
+
+## Wn
+
+
+hist(results[[1]]['Wn',], probability = T, breaks = 20, col = somecolors[[1]], border = somecolornames[1], main = TeX('$W_n$'), xlab = '', ylab = '')
+hist(results[[2]]['Wn',], probability = T, breaks = 30, col = somecolors[[2]], border = somecolornames[2], add = T)
+
+abline(v = 0, col=somecolornames[4], lwd=3, lty=2)
+legend("center", c("n = 10", "n = 50", 'Rejection boundary'), fill=c(somecolors[[1]], somecolors[[2]], somecolornames[4]))
+
+
+
+hist(results[[3]]['Wn',], probability = T, ylim = c(0,0.065), breaks = 20, col = somecolors[[7]], xlim = c(-40,100), border = somecolornames[7], main = TeX('$W_n$'), xlab = '', ylab = '')
+hist(results[[4]]['Wn',], probability = T, breaks = 30, col = somecolors[[6]], add = T, border = somecolornames[6])
+hist(results[[5]]['Wn',], probability = T, breaks = 10, col = somecolors[[8]], add = T, border = somecolornames[8])
+
+abline(v = 0, col=somecolornames[4], lwd=3, lty=2)
+legend("right", c("n = 420", "n = 840", "n = 4200", 'Rejection boundary'), fill=c(somecolors[[7]], somecolors[[6]], somecolors[[8]], somecolornames[4]))
+
+
+```
+
+
+Similarly as before, for $n = 10$, $n = 50$, $n = 840$, $n = 4200$, both tests always reject the null, hence the computed size is $0$ (to be precise, $W_n$ rejects the null once for $n = 840$, yielding a size of $0.001$ for every sensible value of $\alpha$). Both tests have some positive value for $n = 420$ ($28$ value for $U_n$ and $57$ values for $W_n$); these values are big enough to let $U_n$ have a size of $0.028$, and $W_n$ a size of $0.057$, for every sensible choice of $\alpha$ (e.g. $\alpha > 10^{-9}$).
+
+We think that this behaviour around $n=420$ is very odd, in this case the tests seem to barely hold up (size-wise) to the corresponding asympototical test in Li et al.
+
+
+
+### Literature
+
+As in the previous cases, to evaluate the size of the tests for the *literature* graph, we simulated under the null hypothesis of absence of two edges (shown here in green but not present in the graph) for a total of $1000$ iterations. We repeated this simulation $6$ times for different values of the sample size.
+
+```{r Literature graph size sim, fig.width = 6, fig.asp = 1}
+
+
+# this simulation is veeeery slow
+# do not start it unless you are prepared to several
+# hours of multi-threaded computations
+simulate = FALSE
+
+
+
+# set random seed for reproducibility
+set.seed(2898)
+
+# select literature graph
+p = 11
+M = 1000
+A = A_literature
+
+
+### H0: F = { ('pjnk','P38'), ('PIP2','pmek') }, and A[F] = 0
+D <- matrix(0, p, p)
+dimnames(D) = dimnames(A)
+D['pjnk','P38'] = 1
+D['PIP2','pmek'] = 1
+
+
+
+
+############### Graph plot ###############
+g  <- graph.adjacency(A_literature, weighted = TRUE)
+
+V(g)$color[cell_names[c('praf', 'pmek',	'plcg', 'p44/42',	'pakts473',	'PKA',	'PKC',	'P38',	'pjnk')]] <- "red"
+V(g)$color[cell_names[c('PIP2',	'PIP3')]] <- "gold"
+
+V(g)$size = 20
+V(g)$size[cell_names['pakts473']] = 28
+V(g)$size[cell_names['p44/42']] = 25
+
+E(g)$color = 'blue'
+
+g = g %>% add_edges(c('pjnk','P38', 'PIP2','pmek'))   # add the fake edges
+E(g)$color[is.na(E(g)$color)] = 'green'
+
+plot( g, 
+     edge.arrow.size = 0.42 * 2,
+     vertex.frame.color = "black", vertex.label.color = "black",
+     vertex.label.cex = 0.8, vertex.label.dist = 0, edge.curved = 0,
+     layout = layout_with_graphopt )
+
+
+
+legend('topright',legend=c('Real edge', TeX('Edge under $H_a$')), col = c('blue','green'), lty = 1)
+
+
+
+
+# Simulation
+n_vec = c(10, 50, 200, 1000, 7500, 20000)
+
+
+
+
+if(simulate) {
+  
+  results = list()
+  
+  start_time = Sys.time()
+  
+  for ( i in 1:length(n_vec)) {
+    n = n_vec[i]
+    
+    # SIMULATION
+    result = replicate(M, simulation(A = A, solved = t(solve(diag(p) - A)), D = D, n = n, p = p, tau = 0.35, mu = 42/42, rho = 1.2), simplify = TRUE)
+    
+    results = append(results, list(result))  # store results
+    progress(i, length(n_vec))  # progress bar
+  }
+  
+  
+  # taking timings
+  elapsed_time = Sys.time() - start_time
+  cat('The simulation took', elapsed_time, units(elapsed_time),'\n\n')
+  
+  
+  # save the results on the disk
+  saveRDS(results, 'size_literature.rds')
+  
+}
+
+
+```
+
+
+And here we show the results. We marked for convenience a *rejection boundary* at $0$ since negative values of either statistics will always reject the null.
+
+
+```{r Literature graph size analysis, fig.width = 10, fig.asp = 1, echo = FALSE}
+
+
+# retrieve results from the disk
+results <- readRDS("size_literature.rds")
+
+
+par(mfrow = c(2,3))
+
+
+## Un
+
+
+hist(results[[1]]['Un',], probability = T, breaks = 100, xlim = c(-30000,0), col = somecolors[[1]], border = somecolornames[1], main = TeX('$U_n$'), xlab = '', ylab = '')
+
+
+abline(v = 0, col=somecolornames[4], lwd=3, lty=2)
+legend("center", c("n = 10", 'Rejection boundary'), fill=c(somecolors[[1]], somecolornames[4]))
+
+
+hist(results[[2]]['Un',], probability = T, breaks = 10, col = somecolors[[2]], border = somecolornames[2], xlim = c(-400,400), main = TeX('$U_n$'), xlab = '', ylab = '')
+hist(results[[3]]['Un',], probability = T, breaks = 20, col = somecolors[[7]], border = somecolornames[7], add = T)
+hist(results[[4]]['Un',], probability = T, breaks = 20, col = somecolors[[21]], border = somecolornames[21], add = T)
+
+abline(v = 0, col=somecolornames[4], lwd=3, lty=2)
+legend("topright", c("n = 50", "n = 200", 'n = 1000', 'Rejection boundary'), fill=c(somecolors[[2]], somecolors[[7]], somecolors[[21]], somecolornames[4]))
+
+
+
+
+hist(results[[5]]['Un',], probability = T, breaks = 10, col = somecolors[[8]], border = somecolornames[8], xlim = c(-1500,2600), ylim = c(0,0.005), main = TeX('$U_n$'), xlab = '', ylab = '')
+hist(results[[6]]['Un',], probability = T, breaks = 20, col = somecolors[[14]], border = somecolornames[14], add = T)
+
+
+abline(v = 0, col=somecolornames[4], lwd=3, lty=2)
+legend("right", c("n = 7500", "n = 20000", 'Rejection boundary'), fill=c(somecolors[[8]], somecolors[[14]], somecolornames[4]))
+
+
+
+## Wn
+
+
+hist(results[[1]]['Wn',], probability = T, breaks = 100, xlim = c(-10000,0), col = somecolors[[1]], border = somecolornames[1], main = TeX('$W_n$'), xlab = '', ylab = '')
+
+
+abline(v = 0, col=somecolornames[4], lwd=3, lty=2)
+legend("center", c("n = 10", 'Rejection boundary'), fill=c(somecolors[[1]], somecolornames[4]))
+
+
+hist(results[[2]]['Wn',], probability = T, breaks = 10, col = somecolors[[2]], border = somecolornames[2], xlim = c(-200,500), main = TeX('$W_n$'), xlab = '', ylab = '')
+hist(results[[3]]['Wn',], probability = T, breaks = 20, col = somecolors[[7]], border = somecolornames[7], add = T)
+hist(results[[4]]['Wn',], probability = T, breaks = 40, col = somecolors[[21]], border = somecolornames[21], add = T)
+
+abline(v = 0, col=somecolornames[4], lwd=3, lty=2)
+legend("right", c("n = 50", "n = 200", 'n = 1000', 'Rejection boundary'), fill=c(somecolors[[2]], somecolors[[7]], somecolors[[21]], somecolornames[4]))
+
+
+
+
+hist(results[[5]]['Wn',], probability = T, breaks = 10, col = somecolors[[8]], border = somecolornames[8], xlim = c(-200,2600), ylim = c(0,0.01), main = TeX('$W_n$'), xlab = '', ylab = '')
+hist(results[[6]]['Wn',], probability = T, breaks = 20, col = somecolors[[14]], border = somecolornames[14], add = T)
+
+
+abline(v = 0, col=somecolornames[4], lwd=3, lty=2)
+legend("right", c("n = 7500", "n = 20000", 'Rejection boundary'), fill=c(somecolors[[8]], somecolors[[14]], somecolornames[4]))
+
+
+
+```
+
+The behaviour for this graph is quite different: for $n = 10$ we have an identically null size. For the highest values of $n$ ($n = 7500$ and $n = 20000$) both statistics assume values high enough to let us compute the size for all the interesting values of $\alpha$:
+
+| $n$ | $U_n$ | $W_n$ |
+|:---|---:|---:|
+| $7500$ | $0.005$ | $0.08$ |
+| $20000$ | $0.037$ | $0.006$ |
+
+: Size values of the two tests for every *sensible* choice of $\alpha$
+
+The mid-values of $n$ are heavily oversized, here a plot of their size as a function of $\alpha$:
+
+```{r oversized plots, fig.width = 10, fig.asp = 0.3, echo = FALSE}
+
+alpha_vec = seq(0.01,1,1/100)
+size_vecUn = matrix(NA, ncol = 3, nrow = length(alpha_vec))
+size_vecWn = matrix(NA, ncol = 3, nrow = length(alpha_vec))
+
+
+for (i in 1:length(alpha_vec)) {
+  for (j in 2:4) {
+    size_vecUn[i,j-1] = sum(results[[j]]['Un',] > log(1/alpha_vec[i]))/1000
+    size_vecWn[i,j-1] = sum(results[[j]]['Wn',] > log(1/alpha_vec[i]))/1000
+  }
+}
+
+
+
+par(mfrow = c(1,3))
+
+
+plot(alpha_vec, size_vecUn[,1], lty = 1, type = 'l', ylab = 'Size', xlab = TeX('$\\alpha$'), main = TeX('$n=50$'), col = somecolornames[[3]], ylim = c(0.02, 0.06))
+grid()
+
+lines(alpha_vec, size_vecUn[,1], col = somecolornames[[3]], lwd = 2)
+lines(alpha_vec, size_vecWn[,1], col = somecolornames[[6]], lwd = 2)
+
+legend("center", c(TeX('$U_n$'), TeX('$W_n$')), fill=c(somecolornames[3], somecolornames[6]), cex = 1)
+
+
+plot(alpha_vec, size_vecUn[,2], lty = 1, type = 'l', ylab = 'Size', xlab = TeX('$\\alpha$'), main = TeX('$U_n$'), col = somecolornames[[3]], ylim = c(0.255, 0.31))
+grid()
+
+lines(alpha_vec, size_vecUn[,2], col = somecolornames[[8]], lwd = 2)
+lines(alpha_vec, size_vecUn[,3], col = somecolornames[[12]], lwd = 2)
+
+legend("center", c(TeX('$n = 200$'), TeX('$n = 1000$')), fill=c(somecolornames[8], somecolornames[12]), cex = 1)
+
+
+
+
+plot(alpha_vec, size_vecWn[,2], lty = 1, type = 'l', ylab = 'Size', xlab = TeX('$\\alpha$'), main = TeX('$W_n$'), col = somecolornames[[3]], ylim = c(0.51, 0.65))
+grid()
+
+lines(alpha_vec, size_vecWn[,2], col = somecolornames[[9]], lwd = 2)
+lines(alpha_vec, size_vecWn[,3], col = somecolornames[[13]], lwd = 2)
+
+legend("center", c(TeX('$n = 200$'), TeX('$n = 1000$')), fill=c(somecolornames[9], somecolornames[13]), cex = 1)
+
+
+
+```
+
+For $n = 50$ the results are reasonable, but in the other cases the results are alarming (for $W_n$ we would even obtain better results by *not* doing what the test suggests). Since the control at level $\alpha$ should be guaranteed even in finite-sample (as in **Theorem 3.** in Wassermann et Al.), we suspect that there is some problem with the optimization algorithm. Because of the computational effort required to run these tests, and because of time constraints, we were not able to identify the problem in the algorithm, but we hope that the problem won't be as marked in the real-data part of this homework.
+
+## Power
+
+To evaluate the power of our tests, we simulated under $3$ different (and *false*) null hypotheses, varying the number of edges in each one to modulate the distance between the nulls and the alternative (and *true*) hypothesis.
+
+### Hub
+
+To evaluate the power of the tests for the *hub* graph, we simulated under $3$ null hypotheses of absence of edges:
+
+* $F_1 = \{(41,42)\}$ and $H_0^1:\ A[F_1] = 0$ (in red in the plot)
+* $F_2 = \{(35,42), (36,42), \dots, (40,42)\}$ and $H_0^2:\ A[F_2] = 0$ (in blue in the plot)
+* $F_3 = \{(1,42), (2,42), \dots, (20,42)\}$ and $H_0^3:\ A[F_3] = 0$ (in green in the plot)
+
+these edges are all present in the underlying graph, so that these $3$ hypotheses are all *false*.
+
+We repeated this simulation $5$ times for different values of the sample size, for a total of $1000$ iterations for each size.
+```{r Hub graph power sim, fig.width = 6, fig.asp = 1}
+
+
+# this simulation is veeeeeeeeeeeery slow
+# do not start it unless you are prepared to several
+# hours of multi-threaded computations
+simulate = FALSE
+
+
+# set random seed for reproducibility
+set.seed(2898)
+
+
+# select hub graph
+p = 42
+M = 1000
+A = A_hub
+
+
+### H01: F = { (41,42) }, and A[F] = 0
+D1 <- matrix(0, p, p)
+D1[41,42] = 1
+
+### H02: F = { (35,42),...,(40,42) }, and A[F] = 0
+D2 <- matrix(0, p, p)
+D2[35:40,42] = 1
+
+### H03: F = { (1,42),...,(20,42) }, and A[F] = 0
+D3 <- matrix(0, p, p)
+D3[1:20,42] = 1
+
+# the three different nulls
+hypotheses = list(D1, D2, D3)
+
+
+############### Graph plot ###############
+g  <- graph.adjacency(A, weighted = TRUE)
+
+V(g)$color    <- "gold"
+V(g)$color[42] <- "green" # Hub
+
+E(g)$color = 'gray'
+E(g)[ 41 %->% 42 ]$color = 'red'
+E(g)[ 35:40 %->% 42 ]$color = 'blue'
+E(g)[ 1:20 %->% 42 ]$color = 'green'
+
+plot( g, 
+     edge.arrow.size = .42,
+     vertex.frame.color = "gray", vertex.label.color = "black", 
+     vertex.label.cex = 1, vertex.label.dist = 0, edge.curved = 0,
+     layout = layout_with_gem )
+
+
+legend('topleft',legend=c(TeX('$H_0^1$'), TeX('$H_0^2$'), TeX('$H_0^3$')), col = c('red','blue', 'green'), lty = 1, cex = 1.1)
+
+
+
+
+# Simulation
+n_vec = c(10, 50, 420, 840, 4200)
+
+
+if(simulate) {
+  
+  all_results = list()
+  
+  start_time = Sys.time()
+  
+  for(j in 1:3) {
+    D = hypotheses[[j]]
+    
+    results = list()
+    for ( i in 1:length(n_vec)) {
+      n = n_vec[i]
+      
+      # SIMULATION
+      result = replicate(M, simulation(A = A, solved = t(solve(diag(p) - A)), D = D, n = n, p = p, tau = 0.35, mu = 42/42, rho = 1.2), simplify = TRUE)
+      
+      results = append(results, list(result))
+      
+      progress(i + length(n_vec)*(j-1) , 3*length(n_vec))  # progress bar
+    }
+    
+    all_results = append(all_results, list(results))  # store results
+  }
+  
+  # taking timings
+  elapsed_time = Sys.time() - start_time
+  cat('The simulation took', elapsed_time, units(elapsed_time),'\n\n')
+  
+  
+  names(all_results) = c('D1', 'D2', 'D3')
+  
+  # save the results on the disk
+  saveRDS(all_results, 'power_hub.rds')
+  
+}
+
+
+
+```
+
+And here we show the results. We marked for convenience a *rejection boundary* at some fixed value of $\alpha$.
+
+```{r Hub graph power analysis, fig.width = 10, fig.asp = 2, echo = FALSE}
+
+results <- readRDS("power_hub.rds")
+
+
+
+
+par(mfrow = c(5,2))
+
+
+# Un
+
+hist(results$D1[[1]]['Un',], probability = T, breaks = 200, xlim = c(-15000,0), ylim = c(0,0.00045), col = somecolors[[1]], border = somecolornames[1], main = TeX('$U_{10}$'), xlab = '', ylab = '')
+hist(results$D2[[1]]['Un',], probability = T, breaks = 100, add = T, col = somecolors[[2]], border = somecolornames[2])
+hist(results$D3[[1]]['Un',], probability = T, breaks = 200, add = T, col = somecolors[[3]], border = somecolornames[3])
+
+abline(v = 0, col=somecolornames[4], lwd=3, lty=2)
+legend("topleft", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'), TeX('Rejection boundary at $\\alpha = 1$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+hist(results$D1[[2]]['Un',], probability = T, breaks = 100, xlim = c(-15000,0), ylim = c(0,0.00045), col = somecolors[[1]], border = somecolornames[1], main = TeX('$U_{50}$'), xlab = '', ylab = '')
+hist(results$D2[[2]]['Un',], probability = T, breaks = 200, add = T, col = somecolors[[2]], border = somecolornames[2])
+hist(results$D3[[2]]['Un',], probability = T, breaks = 400, add = T, col = somecolors[[3]], border = somecolornames[3])
+
+abline(v = 0, col=somecolornames[4], lwd=3, lty=2)
+legend("topleft", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'), TeX('Rejection boundary at $\\alpha = 1$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+
+hist(results$D1[[3]]['Un',], probability = T, xlim = c(0,2000), ylim = c(0,0.02), col = somecolors[[1]], border = somecolornames[1], main = TeX('$U_{420}$'), xlab = '', ylab = '')
+hist(results$D2[[3]]['Un',], probability = T, col = somecolors[[2]], add = T, border = somecolornames[2])
+hist(results$D3[[3]]['Un',], probability = T, col = somecolors[[3]], add = T, border = somecolornames[3])
+
+abline(v = log(1/0.001), col=somecolornames[4], lwd=3, lty=2)
+legend("topright", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'), TeX('Rejection boundary at $\\alpha = 0.001$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+hist(results$D1[[4]]['Un',], probability = T, xlim = c(0,4000), ylim = c(0,0.015), col = somecolors[[1]], border = somecolornames[1], main = TeX('$U_{840}$'), xlab = '', ylab = '')
+hist(results$D2[[4]]['Un',], probability = T, col = somecolors[[2]], add = T, border = somecolornames[2])
+hist(results$D3[[4]]['Un',], probability = T, col = somecolors[[3]], add = T, border = somecolornames[3])
+
+abline(v = log(1/0.001), col=somecolornames[4], lwd=3, lty=2)
+legend("topright", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'),TeX('Rejection boundary at $\\alpha = 0.001$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+
+hist(results$D1[[5]]['Un',], probability = T, xlim = c(0,18000), breaks = 5, ylim = c(0,0.005), col = somecolors[[1]], border = somecolornames[1], main = TeX('$U_{4200}$'), xlab = '', ylab = '')
+hist(results$D2[[5]]['Un',], probability = T, breaks = 5, col = somecolors[[2]], border = somecolornames[2], add = T)
+hist(results$D3[[5]]['Un',], probability = T, col = somecolors[[3]], border = somecolornames[3], add = T)
+
+abline(v = log(1/0.001), col=somecolornames[4], lwd=3, lty=2)
+legend("topright", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'),TeX('Rejection boundary at $\\alpha = 0.001$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+
+# Wn
+
+
+hist(results$D1[[1]]['Wn',], probability = T, breaks = 100, xlim = c(-3000,0), ylim = c(0,0.0013), col = somecolors[[1]], border = somecolornames[1], main = TeX('$W_{10}$'), xlab = '', ylab = '')
+hist(results$D2[[1]]['Wn',], probability = T, breaks = 100, add = T, col = somecolors[[2]], border = somecolornames[2])
+hist(results$D3[[1]]['Wn',], probability = T, breaks = 200, add = T, col = somecolors[[3]], border = somecolornames[3])
+
+abline(v = 0, col=somecolornames[4], lwd=3, lty=2)
+legend("topleft", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'), TeX('Rejection boundary at $\\alpha = 1$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+hist(results$D1[[2]]['Wn',], probability = T, breaks = 200, xlim = c(-5000,0), ylim = c(0,0.0006), col = somecolors[[1]], border = somecolornames[1], main = TeX('$W_{50}$'), xlab = '', ylab = '')
+hist(results$D2[[2]]['Wn',], probability = T, breaks = 200, add = T, col = somecolors[[2]], border = somecolornames[2])
+hist(results$D3[[2]]['Wn',], probability = T, breaks = 100, add = T, col = somecolors[[3]], border = somecolornames[3])
+
+abline(v = 0, col=somecolornames[4], lwd=3, lty=2)
+legend("topleft", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'), TeX('Rejection boundary at $\\alpha = 1$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+hist(results$D1[[3]]['Wn',], probability = T, breaks = 5, xlim = c(0,2000), ylim = c(0,0.02), col = somecolors[[1]], border = somecolornames[1], main = TeX('$W_{420}$'), xlab = '', ylab = '')
+hist(results$D2[[3]]['Wn',], probability = T, col = somecolors[[2]], add = T, border = somecolornames[2])
+hist(results$D3[[3]]['Wn',], probability = T, col = somecolors[[3]], add = T, border = somecolornames[3])
+
+abline(v = log(1/0.001), col=somecolornames[4], lwd=3, lty=2)
+legend("topright", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'), TeX('Rejection boundary at $\\alpha = 0.001$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+hist(results$D1[[4]]['Wn',], probability = T, breaks = 4, xlim = c(0,3900), ylim = c(0,0.015), col = somecolors[[1]], border = somecolornames[1], main = TeX('$W_{840}$'), xlab = '', ylab = '')
+hist(results$D2[[4]]['Wn',], probability = T, col = somecolors[[2]], add = T, border = somecolornames[2])
+hist(results$D3[[4]]['Wn',], probability = T, col = somecolors[[3]], add = T, border = somecolornames[3])
+
+abline(v = log(1/0.001), col=somecolornames[4], lwd=3, lty=2)
+legend("topright", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'),TeX('Rejection boundary at $\\alpha = 0.001$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+
+hist(results$D1[[5]]['Wn',], probability = T, xlim = c(0,18000), breaks = 2, ylim = c(0,0.004), col = somecolors[[1]], border = somecolornames[1], main = TeX('$W_{4200}$'), xlab = '', ylab = '')
+hist(results$D2[[5]]['Wn',], probability = T, breaks = 5, col = somecolors[[2]], border = somecolornames[2], add = T)
+hist(results$D3[[5]]['Wn',], probability = T, col = somecolors[[3]], border = somecolornames[3], add = T)
+
+abline(v = log(1/0.001), col=somecolornames[4], lwd=3, lty=2)
+legend("topright", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'),TeX('Rejection boundary at $\\alpha = 0.001$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+```
+
+As we can see, for the lower values of $n = 10$ and $n = 50$, both statistics never reject the null, yielding a null power for all the hypotheses. Once we increase $n$ to $420$ and beyond, the power gets very close to $1$; we can see that the different hypotheses bring different *confidence* in the rejection, yielding high power even for *absurdly* low values of $\alpha$ in the case of $H_0^3$.
+
+Excluding the low sample size cases, the tests are all well equipped in terms of power, exceeding the performance of their counterpart in Li et Al.
+
+
+### Sparse
+
+As before, to evaluate the power of the tests for the *sparse* graph, we simulated under $3$ null hypotheses of absence of edges: the details about the hypotheses can be found in the code; a visual summary is shown in the plot below.
+
+We repeated this simulation $5$ times for different values of the sample size, for a total of $1000$ iterations for each size.
+
+```{r Sparse graph power sim, fig.width = 6, fig.asp = 1}
+
+
+# this simulation is veeeeeeeeeeeery slow
+# do not start it unless you are prepared to several
+# hours of multi-threaded computations
+simulate = FALSE
+
+
+# set random seed for reproducibility
+set.seed(2899)
+
+
+# select hub graph
+p = 42
+M = 1000
+A = A_sparse
+
+
+
+### H01: F = { (42,10) }, and A[F] = 0
+D1 <- matrix(0, p, p)
+D1[42,10] = 1
+
+### H02: F = { (37,25),(37,28),(38,5),(38,26),(41,5) }, and A[F] = 0
+D2 <- matrix(0, p, p)
+D2[37,25] = 1
+D2[37,28] = 1
+D2[38, 5] = 1
+D2[38,26] = 1
+D2[41, 5] = 1
+
+### H03: F = { (11,9),(23,4),(27,8),(29,13),(29,26),(33,30),(36,20),(36,24),(37,9) }, and A[F] = 0
+D3 <- matrix(0, p, p)
+D3[11, 9] = 1
+D3[23, 4] = 1
+D3[27, 8] = 1
+D3[29,13] = 1
+D3[29,26] = 1
+D3[33,30] = 1
+D3[36,20] = 1
+D3[36,24] = 1
+D3[37, 9] = 1
+
+
+# the three different nulls
+hypotheses = list(D1, D2, D3)
+
+
+
+############### Graph plot ###############
+g  <- graph.adjacency(abs(A), weighted = TRUE)
+
+V(g)$color    <- "gold"
+
+E(g)$color = 'gray'
+
+
+#D1
+E(g)[ 42 %->% 10 ]$color = 'red'
+#D2
+E(g)[ 37%->%25]$color = 'blue'
+E(g)[ 37%->%28]$color = 'blue'
+E(g)[ 38%->% 5]$color = 'blue'
+E(g)[ 38%->%26]$color = 'blue'
+E(g)[ 41%->% 5]$color = 'blue'
+#D3
+E(g)[ 11%->% 9]$color = 'green'
+E(g)[ 23%->% 4]$color = 'green'
+E(g)[ 27%->% 8]$color = 'green'
+E(g)[ 29%->%13]$color = 'green'
+E(g)[ 29%->%26]$color = 'green'
+E(g)[33%->%30]$color = 'green'
+E(g)[36%->%20]$color = 'green'
+E(g)[36%->%24]$color = 'green'
+E(g)[37%->% 9]$color = 'green'
+
+
+plot( g, 
+     edge.arrow.size = 0.042,
+     vertex.frame.color = "gray", vertex.size=6, vertex.label = NA, edge.curved = 0.2,
+     layout = layout_with_mds )
+
+legend('topright',legend=c(TeX('$H_0^1$'), TeX('$H_0^2$'), TeX('$H_0^3$')), col = c('red','blue', 'green'), lty = 1, cex = 1.1)
+
+
+
+
+
+# Simulation
+n_vec = c(10, 50, 420, 840, 4200)
+
+
+if(simulate) {
+  
+  all_results = list()
+  
+  start_time = Sys.time()
+  
+  for(j in 1:3) {
+    D = hypotheses[[j]]
+    
+    results = list()
+    for ( i in 1:length(n_vec)) {
+      n = n_vec[i]
+      
+      # SIMULATION
+      result = replicate(M, simulation(A = A, solved = t(solve(diag(p) - A)), D = D, n = n, p = p, tau = 0.35, mu = 42/42, rho = 1.2), simplify = TRUE)
+      
+      results = append(results, list(result))
+      
+      progress(i + length(n_vec)*(j-1) , 3*length(n_vec))  # progress bar
+    }
+    
+    all_results = append(all_results, list(results))  # store results
+  }
+  
+  # taking timings
+  elapsed_time = Sys.time() - start_time
+  cat('The simulation took', elapsed_time, units(elapsed_time),'\n\n')
+  
+  
+  names(all_results) = c('D1', 'D2', 'D3')
+  
+  # save the results on the disk
+  saveRDS(all_results, 'power_sparse.rds')
+  
+}
+
+
+```
+
+
+And here we show the results. We marked for convenience a *rejection boundary* at some fixed value of $\alpha$.
+
+
+```{r Sparse graph power analysis, fig.width = 10, fig.asp = 2, echo = FALSE}
+
+results <- readRDS("power_sparse.rds")
+
+
+
+
+par(mfrow = c(5,2))
+
+
+# Un
+
+hist(results$D1[[1]]['Un',], probability = T, breaks = 200, xlim = c(-10000,0), ylim = c(0,0.00035), col = somecolors[[1]], border = somecolornames[1], main = TeX('$U_{10}$'), xlab = '', ylab = '')
+hist(results$D2[[1]]['Un',], probability = T, breaks = 100, add = T, col = somecolors[[2]], border = somecolornames[2])
+hist(results$D3[[1]]['Un',], probability = T, breaks = 400, add = T, col = somecolors[[3]], border = somecolornames[3])
+
+abline(v = 0, col=somecolornames[4], lwd=3, lty=2)
+legend("topleft", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'), TeX('Rejection boundary at $\\alpha = 1$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+hist(results$D1[[2]]['Un',], probability = T, breaks = 200, xlim = c(-10000,0), ylim = c(0,0.0004), col = somecolors[[1]], border = somecolornames[1], main = TeX('$U_{50}$'), xlab = '', ylab = '')
+hist(results$D2[[2]]['Un',], probability = T, breaks = 200, add = T, col = somecolors[[2]], border = somecolornames[2])
+hist(results$D3[[2]]['Un',], probability = T, breaks = 200, add = T, col = somecolors[[3]], border = somecolornames[3])
+
+abline(v = 0, col=somecolornames[4], lwd=3, lty=2)
+legend("topleft", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'), TeX('Rejection boundary at $\\alpha = 1$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+
+hist(results$D1[[3]]['Un',], probability = T, xlim = c(-200,1000), ylim = c(0,0.015), col = somecolors[[1]], border = somecolornames[1], main = TeX('$U_{420}$'), xlab = '', ylab = '')
+hist(results$D2[[3]]['Un',], probability = T, col = somecolors[[2]], add = T, border = somecolornames[2])
+hist(results$D3[[3]]['Un',], probability = T, col = somecolors[[3]], add = T, border = somecolornames[3])
+
+abline(v = log(1/0.001), col=somecolornames[4], lwd=3, lty=2)
+legend("topright", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'), TeX('Rejection boundary at $\\alpha = 0.001$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+hist(results$D1[[4]]['Un',], probability = T, xlim = c(0,2000), ylim = c(0,0.013), col = somecolors[[1]], border = somecolornames[1], main = TeX('$U_{840}$'), xlab = '', ylab = '', breaks = 5)
+hist(results$D2[[4]]['Un',], probability = T, col = somecolors[[2]], add = T, border = somecolornames[2])
+hist(results$D3[[4]]['Un',], probability = T, col = somecolors[[3]], add = T, border = somecolornames[3])
+
+abline(v = log(1/0.001), col=somecolornames[4], lwd=3, lty=2)
+legend("topright", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'),TeX('Rejection boundary at $\\alpha = 0.001$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+
+hist(results$D1[[5]]['Un',], probability = T, xlim = c(0,9000), breaks = 3, ylim = c(0,0.006), col = somecolors[[1]], border = somecolornames[1], main = TeX('$U_{4200}$'), xlab = '', ylab = '')
+hist(results$D2[[5]]['Un',], probability = T, breaks = 5, col = somecolors[[2]], border = somecolornames[2], add = T)
+hist(results$D3[[5]]['Un',], probability = T, col = somecolors[[3]], border = somecolornames[3], add = T)
+
+abline(v = log(1/0.001), col=somecolornames[4], lwd=3, lty=2)
+legend("topright", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'),TeX('Rejection boundary at $\\alpha = 0.001$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+
+# Wn
+
+
+hist(results$D1[[1]]['Wn',], probability = T, breaks = 200, xlim = c(-5000,0), ylim = c(0,0.0008), col = somecolors[[1]], border = somecolornames[1], main = TeX('$W_{10}$'), xlab = '', ylab = '')
+hist(results$D2[[1]]['Wn',], probability = T, breaks = 100, add = T, col = somecolors[[2]], border = somecolornames[2])
+hist(results$D3[[1]]['Wn',], probability = T, breaks = 200, add = T, col = somecolors[[3]], border = somecolornames[3])
+
+abline(v = 0, col=somecolornames[4], lwd=3, lty=2)
+legend("topleft", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'), TeX('Rejection boundary at $\\alpha = 1$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+hist(results$D1[[2]]['Wn',], probability = T, breaks = 200, xlim = c(-5000,0), ylim = c(0,0.0006), col = somecolors[[1]], border = somecolornames[1], main = TeX('$W_{50}$'), xlab = '', ylab = '')
+hist(results$D2[[2]]['Wn',], probability = T, breaks = 200, add = T, col = somecolors[[2]], border = somecolornames[2])
+hist(results$D3[[2]]['Wn',], probability = T, breaks = 50, add = T, col = somecolors[[3]], border = somecolornames[3])
+
+abline(v = 0, col=somecolornames[4], lwd=3, lty=2)
+legend("topleft", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'), TeX('Rejection boundary at $\\alpha = 1$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+hist(results$D1[[3]]['Wn',], probability = T, breaks = 10, xlim = c(0,1000), ylim = c(0,0.022), col = somecolors[[1]], border = somecolornames[1], main = TeX('$W_{420}$'), xlab = '', ylab = '')
+hist(results$D2[[3]]['Wn',], probability = T, col = somecolors[[2]], add = T, border = somecolornames[2])
+hist(results$D3[[3]]['Wn',], probability = T, col = somecolors[[3]], add = T, border = somecolornames[3])
+
+abline(v = log(1/0.001), col=somecolornames[4], lwd=3, lty=2)
+legend("topright", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'), TeX('Rejection boundary at $\\alpha = 0.001$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+hist(results$D1[[4]]['Wn',], probability = T, breaks = 4, xlim = c(0,2000), ylim = c(0,0.013), col = somecolors[[1]], border = somecolornames[1], main = TeX('$W_{840}$'), xlab = '', ylab = '')
+hist(results$D2[[4]]['Wn',], probability = T, col = somecolors[[2]], add = T, border = somecolornames[2], breaks = 10)
+hist(results$D3[[4]]['Wn',], probability = T, col = somecolors[[3]], add = T, border = somecolornames[3])
+
+abline(v = log(1/0.001), col=somecolornames[4], lwd=3, lty=2)
+legend("topright", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'),TeX('Rejection boundary at $\\alpha = 0.001$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+
+hist(results$D1[[5]]['Wn',], probability = T, xlim = c(0,9000), breaks = 2, ylim = c(0,0.005), col = somecolors[[1]], border = somecolornames[1], main = TeX('$W_{4200}$'), xlab = '', ylab = '')
+hist(results$D2[[5]]['Wn',], probability = T, breaks = 4, col = somecolors[[2]], border = somecolornames[2], add = T)
+hist(results$D3[[5]]['Wn',], probability = T, breaks = 4, col = somecolors[[3]], border = somecolornames[3], add = T)
+
+abline(v = log(1/0.001), col=somecolornames[4], lwd=3, lty=2)
+legend("topright", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'),TeX('Rejection boundary at $\\alpha = 0.001$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+```
+
+As in the previous case, for the lower values of $n = 10$ and $n = 50$, both statistics never reject the null, yielding a null power for all the hypotheses. Once we increase $n$ to $420$ and beyond, the power gets very close to $1$; we can see that the different hypotheses bring different *confidence* in the rejection, yielding high power even for *absurdly* low values of $\alpha$ in the case of $H_0^3$.
+
+Excluding the low sample size cases, the tests are all well equipped in terms of power, on par with the performance of their counterpart in Li et Al.
+
+
+### Literature
+
+
+As in the previous cases, to evaluate the power of the tests for the *literature* graph, we simulated under $3$ null hypotheses of absence of edges: the details about the hypotheses can be found in the code; a visual summary is shown in the plot below.
+
+We repeated this simulation $5$ times for different values of the sample size, for a total of $1000$ iterations for each size.
+
+```{r Literature graph, fig.width = 6, fig.asp = 1}
+
+
+# this simulation is veeeery slow
+# do not start it unless you are prepared to several
+# hours of multi-threaded computations
+simulate = FALSE
+
+
+
+# set random seed for reproducibility
+set.seed(2898)
+
+# select literature graph
+p = 11
+M = 1000
+A = A_literature
+
+
+### H01: F = { ('PIP3','pakts473') }, and A[F] = 0
+D1 <- matrix(0, p, p)
+dimnames(D1) = dimnames(A)
+D1['PIP3','pakts473'] = 1
+
+### H02: F = { ('PIP3','plcg'),('plcg','PIP2'),('plcg','PKC') }, and A[F] = 0
+D2 <- matrix(0, p, p)
+dimnames(D2) = dimnames(A)
+D2['PIP3','plcg'] = 1
+D2['plcg','PIP2'] = 1
+D2['plcg','PKC'] = 1
+
+### H03: F = { ('PKC', 'pjnk'),('PKC', 'praf'),('PKC', 'pmek'),('PKA','pjnk'),('PKA','praf'),('PKA','pmek'),('PKA','p44/42') }, and A[F] = 0
+D3 <- matrix(0, p, p)
+dimnames(D3) = dimnames(A)
+D3['PKC', 'pjnk'] = 1
+D3['PKC', 'praf'] = 1
+D3['PKC', 'pmek'] = 1
+D3['PKA','pjnk'] = 1
+D3['PKA','praf'] = 1
+D3['PKA','pmek'] = 1
+D3['PKA','p44/42'] = 1
+
+# the three different nulls
+hypotheses = list(D1, D2, D3)
+
+
+############### Graph plot ###############
+g  <- graph.adjacency(A, weighted = TRUE)
+
+V(g)$color[cell_names[c('praf', 'pmek',	'plcg', 'p44/42',	'pakts473',	'PKA',	'PKC',	'P38',	'pjnk')]] <- "red"
+V(g)$color[cell_names[c('PIP2',	'PIP3')]] <- "gold"
+
+V(g)$size = 20
+V(g)$size[cell_names['pakts473']] = 28
+V(g)$size[cell_names['p44/42']] = 25
+
+
+E(g)$color = 'gray'
+
+#D1
+E(g)[ 'PIP3' %->% 'pakts473' ]$color = 'red'
+#D2
+E(g)[ 'PIP3'%->%'plcg']$color = 'blue'
+E(g)[ 'plcg'%->%'PIP2']$color = 'blue'
+E(g)[ 'plcg'%->%'PKC']$color = 'blue'
+
+#D3
+E(g)[ 'PKC'%->% 'pjnk']$color = 'green'
+E(g)[ 'PKC'%->% 'praf']$color = 'green'
+E(g)[ 'PKC'%->% 'pmek']$color = 'green'
+E(g)[ 'PKA'%->% 'pjnk']$color = 'green'
+E(g)[ 'PKA'%->% 'praf']$color = 'green'
+E(g)[ 'PKA'%->% 'pmek']$color = 'green'
+E(g)[ 'PKA'%->% 'p44/42']$color = 'green'
+
+
+
+plot( g, 
+     edge.arrow.size = 0.42 * 2,
+     vertex.frame.color = "black", vertex.label.color = "black",
+     vertex.label.cex = 0.8, vertex.label.dist = 0, edge.curved = 0,
+     layout = layout_with_graphopt )
+
+
+legend('topright',legend=c(TeX('$H_0^1$'), TeX('$H_0^2$'), TeX('$H_0^3$')), col = c('red','blue', 'green'), lty = 1, cex = 1.1)
+
+
+
+
+# Simulation
+n_vec = c(10, 50, 200, 1000, 7500, 20000)
+
+
+if(simulate) {
+  
+  all_results = list()
+  
+  start_time = Sys.time()
+  
+  for(j in 1:3) {
+    D = hypotheses[[j]]
+    
+    results = list()
+    for ( i in 1:length(n_vec)) {
+      n = n_vec[i]
+      
+      # SIMULATION
+      result = replicate(M, simulation(A = A, solved = t(solve(diag(p) - A)), D = D, n = n, p = p, tau = 0.35, mu = 42/42, rho = 1.2), simplify = TRUE)
+      
+      results = append(results, list(result))
+      
+      progress(i + length(n_vec)*(j-1) , 3*length(n_vec))  # progress bar
+    }
+    
+    all_results = append(all_results, list(results))  # store results
+  }
+  
+  # taking timings
+  elapsed_time = Sys.time() - start_time
+  cat('The simulation took', elapsed_time, units(elapsed_time),'\n\n')
+  
+  
+  names(all_results) = c('D1', 'D2', 'D3')
+  
+  # save the results on the disk
+  saveRDS(all_results, 'power_literature.rds')
+  
+}
+
+
+```
+
+And here we show the results. We marked for convenience a *rejection boundary* at some fixed value of $\alpha$.
+
+
+```{r Literature graph power analysis, fig.width = 10, fig.asp = 2, echo = FALSE}
+
+results <- readRDS("power_literature.rds")
+
+
+
+par(mfrow = c(6,2))
+
+
+# Un
+
+hist(results$D1[[1]]['Un',], probability = T, breaks = 200, xlim = c(-6000,0), ylim = c(0,0.0007), col = somecolors[[1]], border = somecolornames[1], main = TeX('$U_{10}$'), xlab = '', ylab = '')
+hist(results$D2[[1]]['Un',], probability = T, breaks = 800, add = T, col = somecolors[[2]], border = somecolornames[2])
+hist(results$D3[[1]]['Un',], probability = T, breaks = 200, add = T, col = somecolors[[3]], border = somecolornames[3])
+
+abline(v = 0, col=somecolornames[4], lwd=3, lty=2)
+legend("topleft", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'), TeX('Rejection boundary at $\\alpha = 1$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+hist(results$D1[[2]]['Un',], probability = T, breaks = 5, xlim = c(-300,400), ylim = c(0,0.011), col = somecolors[[1]], border = somecolornames[1], main = TeX('$U_{50}$'), xlab = '', ylab = '')
+hist(results$D2[[2]]['Un',], probability = T, breaks = 10, add = T, col = somecolors[[2]], border = somecolornames[2])
+hist(results$D3[[2]]['Un',], probability = T, breaks = 10, add = T, col = somecolors[[3]], border = somecolornames[3])
+
+abline(v = 0, col=somecolornames[4], lwd=3, lty=2)
+legend("topright", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'), TeX('Rejection boundary at $\\alpha = 1$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+
+hist(results$D1[[3]]['Un',], probability = T, xlim = c(-300,1200), ylim = c(0,0.007), col = somecolors[[1]], border = somecolornames[1], main = TeX('$U_{200}$'), xlab = '', ylab = '', breaks = 5)
+hist(results$D2[[3]]['Un',], probability = T, col = somecolors[[2]], add = T, border = somecolornames[2])
+hist(results$D3[[3]]['Un',], probability = T, col = somecolors[[3]], add = T, border = somecolornames[3])
+
+abline(v = log(1/0.001), col=somecolornames[4], lwd=3, lty=2)
+legend("topright", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'), TeX('Rejection boundary at $\\alpha = 0.001$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+hist(results$D1[[4]]['Un',], probability = T, xlim = c(-500,5200), ylim = c(0,0.004), col = somecolors[[1]], border = somecolornames[1], main = TeX('$U_{1000}$'), xlab = '', ylab = '', breaks = 5)
+hist(results$D2[[4]]['Un',], probability = T, col = somecolors[[2]], add = T, border = somecolornames[2], breaks = 5)
+hist(results$D3[[4]]['Un',], probability = T, col = somecolors[[3]], add = T, border = somecolornames[3])
+
+abline(v = log(1/0.001), col=somecolornames[4], lwd=3, lty=2)
+legend("topright", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'),TeX('Rejection boundary at $\\alpha = 0.001$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+
+hist(results$D1[[5]]['Un',], probability = T, xlim = c(0,38000), breaks = 2, ylim = c(0,0.0035), col = somecolors[[1]], border = somecolornames[1], main = TeX('$U_{7500}$'), xlab = '', ylab = '')
+hist(results$D2[[5]]['Un',], probability = T, breaks = 4, col = somecolors[[2]], border = somecolornames[2], add = T)
+hist(results$D3[[5]]['Un',], probability = T, col = somecolors[[3]], border = somecolornames[3], add = T, breaks = 4)
+
+abline(v = log(1/0.001), col=somecolornames[4], lwd=3, lty=2)
+legend("topright", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'),TeX('Rejection boundary at $\\alpha = 0.001$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+
+hist(results$D1[[6]]['Un',], probability = T, xlim = c(0,96000), breaks = 1, ylim = c(0,0.001), col = somecolors[[1]], border = somecolornames[1], main = TeX('$U_{20000}$'), xlab = '', ylab = '')
+hist(results$D2[[6]]['Un',], probability = T, breaks = 1, col = somecolors[[2]], border = somecolornames[2], add = T)
+hist(results$D3[[6]]['Un',], probability = T, col = somecolors[[3]], border = somecolornames[3], add = T, breaks = 1)
+
+abline(v = log(1/0.001), col=somecolornames[4], lwd=3, lty=2)
+legend("topright", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'),TeX('Rejection boundary at $\\alpha = 0.001$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+
+# Wn
+
+
+hist(results$D1[[1]]['Wn',], probability = T, breaks = 200, xlim = c(-2000,100), ylim = c(0,0.0017), col = somecolors[[1]], border = somecolornames[1], main = TeX('$W_{10}$'), xlab = '', ylab = '')
+hist(results$D2[[1]]['Wn',], probability = T, breaks = 100, add = T, col = somecolors[[2]], border = somecolornames[2])
+hist(results$D3[[1]]['Wn',], probability = T, breaks = 50, add = T, col = somecolors[[3]], border = somecolornames[3])
+
+abline(v = 0, col=somecolornames[4], lwd=3, lty=2)
+legend("topleft", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'), TeX('Rejection boundary at $\\alpha = 1$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+hist(results$D1[[2]]['Wn',], probability = T, breaks = 5, xlim = c(-100,300), ylim = c(0,0.02), col = somecolors[[1]], border = somecolornames[1], main = TeX('$W_{50}$'), xlab = '', ylab = '')
+hist(results$D2[[2]]['Wn',], probability = T, breaks = 20, add = T, col = somecolors[[2]], border = somecolornames[2])
+hist(results$D3[[2]]['Wn',], probability = T, breaks = 10, add = T, col = somecolors[[3]], border = somecolornames[3])
+
+abline(v = 0, col=somecolornames[4], lwd=3, lty=2)
+legend("topright", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'), TeX('Rejection boundary at $\\alpha = 1$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+hist(results$D1[[3]]['Wn',], probability = T, breaks = 5, xlim = c(0,1000), ylim = c(0,0.01), col = somecolors[[1]], border = somecolornames[1], main = TeX('$W_{200}$'), xlab = '', ylab = '')
+hist(results$D2[[3]]['Wn',], probability = T, col = somecolors[[2]], add = T, border = somecolornames[2])
+hist(results$D3[[3]]['Wn',], probability = T, col = somecolors[[3]], add = T, border = somecolornames[3])
+
+abline(v = log(1/0.001), col=somecolornames[4], lwd=3, lty=2)
+legend("topright", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'), TeX('Rejection boundary at $\\alpha = 0.001$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+hist(results$D1[[4]]['Wn',], probability = T, breaks = 4, xlim = c(0,5500), ylim = c(0,0.0055), col = somecolors[[1]], border = somecolornames[1], main = TeX('$W_{1000}$'), xlab = '', ylab = '')
+hist(results$D2[[4]]['Wn',], probability = T, col = somecolors[[2]], add = T, border = somecolornames[2], breaks = 5)
+hist(results$D3[[4]]['Wn',], probability = T, col = somecolors[[3]], add = T, border = somecolornames[3])
+
+abline(v = log(1/0.001), col=somecolornames[4], lwd=3, lty=2)
+legend("topright", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'),TeX('Rejection boundary at $\\alpha = 0.001$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+
+hist(results$D1[[5]]['Wn',], probability = T, xlim = c(0,38000), breaks = 1, ylim = c(0,0.0021), col = somecolors[[1]], border = somecolornames[1], main = TeX('$W_{7500}$'), xlab = '', ylab = '')
+hist(results$D2[[5]]['Wn',], probability = T, breaks = 2, col = somecolors[[2]], border = somecolornames[2], add = T)
+hist(results$D3[[5]]['Wn',], probability = T, breaks = 2, col = somecolors[[3]], border = somecolornames[3], add = T)
+
+abline(v = log(1/0.001), col=somecolornames[4], lwd=3, lty=2)
+legend("topright", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'),TeX('Rejection boundary at $\\alpha = 0.001$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+hist(results$D1[[6]]['Wn',], probability = T, xlim = c(0,96000), breaks = 2, ylim = c(0,0.002), col = somecolors[[1]], border = somecolornames[1], main = TeX('$W_{20000}$'), xlab = '', ylab = '')
+hist(results$D2[[6]]['Wn',], probability = T, breaks = 3, col = somecolors[[2]], border = somecolornames[2], add = T)
+hist(results$D3[[6]]['Wn',], probability = T, breaks = 3, col = somecolors[[3]], border = somecolornames[3], add = T)
+
+abline(v = log(1/0.001), col=somecolornames[4], lwd=3, lty=2)
+legend("topright", c(TeX('$H_0^1$'), TeX('$H_0^3$'), TeX('$H_0^3$'),TeX('Rejection boundary at $\\alpha = 0.001$')), fill=c(somecolors[[1]], somecolors[[2]], somecolors[[3]], somecolornames[4]))
+
+
+
+```
+
+As in the previous cases, for the lower values of $n = 10$ both statistics never reject the null, yielding a null power for all the hypotheses.
+
+The first thing we notice by looking at the other graph is the ordering of the hypotheses: in our (maybe a bit naive) planning of the simulation, we assumed that to modulate the distance between the null and the alternative we could just increase the number of real edges to be distinguished, but, clearly, we were wrong. The third null hypothesis (which tests the non-existence of $7$ edges) is *closer* than the second one (which tests the non-existence of $3$ edges) to the alternative hypothesis; we suspect that it is because of the topology of these hypotheses, infact, under the second null, we would actually disconnect a node from the graph, while the third would remove edges in a more 'crowded' part of the graph (also disconnecting an already more 'isolated' node).
+
+For $n=50$ we can see the separation in power of the hypotheses: the second and the third shows an high power while the first one is probably a bit low-powered. Once we increase $n$ to $20$ and beyond, the power gets very close to $1$.
+
+Because these are finite sample tests, we would have expected a compromise in power to be able to reach a decent size; we did not observe this fact at the values of $n$ we tested, a 'finer' choice of the sample sizes would probably be necessary to confirm this expectation.
+
+# 4.
+
+Before formalizing our set of hypotheses, we want to give a brief introduction about the technical knowledge that we researched in order to pick them.
+
+* For the biomolecules considered in this document, a directed path is a relationship of biological activation. In particular, in the case of the phospho-proteins, it is intended as the act of phosphorylation (i.e. the act of 'passing on' a phosphate group), which we will use as a synonim for activation.
+
+* The fluorophore are molecular entities that emit light at a specific frequency when stimulated. There is a certain class of fluorophores which can be 'attached' to a specific protein without perturbing the system. The flow cytometry data is obtained by measuring the grade of fluorescence at some specific frequencies through a phoshocytometer. Using the correct fluorophores, the intensities of light should be proportional to the rate of activation of each protein; in this way, flow cytometry allows one to perform a simultaneous measurement of activation of each biomolecule at any point in time.
+
+In the following sections we will consider the flow cytometry data included in the article of Sachs et Al. The dataset is composed by 9 sheets representing various perturbations (i.e. inhibitions or activation of specific proteins inside or outside the measured ones) applied to the cells. Each sheet is a dataframe in which the rows and the columns are, respectively, a single cell set of measurements, and the various measured proteins involved in the reaction.
+
+## The hypotheses
+
+The three linkage-type hypotheses we decided to test are the followings:
+
+* $Erk\to Akt$
+
+  This is a connection found in the model that was not well established in the literature, although it had been previously reported in some particular instances. The prediction was supported by a validation experiment, proving the ability of this type of analysis to correctly predict the putative influence of $Erk$ on $Akt$. Since both $Erk$ and $Akt$ are activated by $PKA$, a direct relationship between the two may be hard to measure; for this reason we think it may be interesting to see if our tests can find it.
+
+* $Plc\gamma\to PIP3$
+
+  The procedure used in Sachs et Al. recognized $PIP3$ to be dependent on $Plc\gamma$. This causality relationship is actually reversed; it is known from the literature that $Plc\gamma$ is actually dependent on the activation of $PIP3$. It would be interesting to understand why their method inverted this relationship; a possible explanation is given by the fact that the connection between $Plc\gamma$ and $PIP3$ is the only one in the model to be a relationship of recruitment, meaning that the activation is not by direct phosphorylation but rather by and indirected series of hidden reactions on unmeasured molecules. We think it may be interesting to see if our tests will commit the same error.
+
+* $PKC \to Mek$
+
+  The activation of $Mek$ is mediated by $PKC$, through the activation of $Raf$; infact, $Mek$ is activated by two different active phosphorylated forms of $Raf$. However, one of these two phosphorylation events is not detected by the measurements. Nevertheless the Sachs et Al. detected an arc from $PKC$ to $Mek$, presumely mediated by the unmeasured intermediate $Raf$. This shows the capability of the algorithm to detect more than one route of influence between molecules, provided they are not redundant. It may be interesting to see if our algorithm too can recover this indirect relationship.
+
+
+Regarding the pathway-type hypothesis, we decided to investigate the $PKC\to Raf\to Mek$  pathway. 
+As stated above, the route of influence between $PKC$ and $Mek$ passes through one of the unmeasured forms of $Raf$. Thus, it is interesting to see if our tests can detect both the linkage relationship described above and the pathway relationship with the measured form of $Raf$. This would give us a good indication of the eventual limitations of this universal tests.
+
+
+In particular, the last two hypotheses could show whether this analysis is capable of detecting more than one route of influence between molecules or not.
+
+
+# 5.
+
+
+The working assumption of our model requires every data column to come from a zero-mean gaussian population. Here we give a brief look at the data to check if this hypothesis is met. Spoiler, it is not.
+
+
+```{r hypothesis check, fig.width = 10, fig.asp = 1, echo = FALSE}
+
+# read the data from disk
+cd3cd28 = read_excel("cytometry-data.xlsx", sheet = 1)
+cd3cd28icam2 = read_excel("cytometry-data.xlsx", sheet = 2)
+cd3cd28aktinhib = read_excel("cytometry-data.xlsx", sheet = 3)
+cd3cd28g0076 = read_excel("cytometry-data.xlsx", sheet = 4)
+cd3cd28psitect = read_excel("cytometry-data.xlsx", sheet = 5)
+cd3cd28u0126 = read_excel("cytometry-data.xlsx", sheet = 6)
+cd3cd28ly = read_excel("cytometry-data.xlsx", sheet = 7)
+pma = read_excel("cytometry-data.xlsx", sheet = 8)
+b2camp = read_excel("cytometry-data.xlsx", sheet = 9)
+
+
+par(mfrow = c(3,2))
+
+hist(cd3cd28[[9]], breaks = 100, main = 'cd3cd28 :: PKC', ylab = '', xlab = '', col = somecolors[[4]], border = somecolornames[4])
+hist(cd3cd28[[11]], breaks = 100, main = 'cd3cd28 :: Jnk', ylab = '', xlab = '', col = somecolors[[2]], border = somecolornames[2])
+hist(b2camp[[9]], breaks = 100, main = 'b2camp :: PKC', ylab = '', xlab = '', col = somecolors[[11]], border = somecolornames[11])
+hist(cd3cd28aktinhib[[4]], breaks = 100, main = 'cd3cd28+aktinhib :: PIP2', ylab = '', xlab = '', col = somecolors[[19]], border = somecolornames[19])
+
+boxplot(pma[[4]], main = 'pma :: PIP2', ylab = '', xlab = '', col = somecolors[[13]])
+boxplot(cd3cd28[[7]], main = 'cd3cd28 :: Akt', ylab = '', xlab = '', col = somecolors[[14]])
+
+```
+
+As we can see, the requirements for our analysis are not met: our data is not zero mean, nor gaussian. Most of the columns are heavily right tailed with some large outliers, and some of them are even bimodal.
+
+To make our data fit a bit more our assumptions, we will apply a basic scale transformation (we will normalize every column by subtracting the mean and dividing by the empirical column standard deviation) and we will remove some of the outliers. We start by trying to justify a bit the transformation that we apply.
+
+Let $\mathbf{X}\in\mathbb{R}^p$ be a random vector representing the nodes in our dataset, and let $\mu\in\mathbb{R}^p$ be the population mean of $\mathbf{X}$. Let $\sigma_i^2$ be the marginal population variance of $X_i$, then let's define $\mathcal{O}\in\mathbb{R}^{p\times p}$ as the diagonal matrix with elements $\mathcal{O}_{i,j} = \sigma_i \delta_{i,j}$. We will assume that the transformed random vector $\mathcal{O}^{-1}(\mathbf{X}-\mu)$ is a Gaussian random vector that follows our SEM, i.e. we will assume that
+$$\mathcal{O}^{-1}(\mathbf{X}-\mu) = \mathbb{A}\left( \mathcal{O}^{-1}(\mathbf{X}-\mu) \right) + \epsilon$$
+with $\epsilon\sim N_p(\mathbf{0},\mathbb{I}_p)$ and $\mathbb{A}$ the $p\times p$ adjacency matrix.
+
+We want to understand the consequences of this assumption on the data itself, to do this we can write (using the fact that $\mathcal{O}$ is diagonal):
+\begin{align}
+\mathbf{X} = \mathcal{O}\mathbb{A}\left( \mathcal{O}^{-1}(\mathbf{X}-\mu) \right) + \mathcal{O}\epsilon + \mu = \mathbb{A}\mathbf{X} + \left(\mathbb{I}_p - \mathbb{A}\right)\mu + \mathcal{O}\epsilon = \mathbb{A}\mathbf{X} + \xi
+\end{align}
+where $\xi\sim N_p(\left(\mathbb{I}_p - \mathbb{A}\right)\mu, \mathcal{O}^{2})$.
+
+This shows that our assumption is equivalent to the assumption that the gaussian noise has a diagonal covariance matrix with a well specified mean (depending on the adjacency matrix $\mathbb{A}$). We think that this shows that the initial assumption is somewhat reasonable (or, at least, less stringent than it seemed to be).
+
+Here we show some plots of the transformed dataset, in which we have normalized each column and removed every data point that was farther than $6$ standard deviations from the mean (for a total of about 150 outliers, roughly $2\%$ of the data).
+
+```{r transform data, fig.width = 10, fig.asp = 1}
+
+transform_dataset = function(X) {
+  # this function normalizes the columns
+  # of the input dataset
+  
+  
+  p = ncol(X)
+  n = nrow(X)
+  
+  
+  mean_matrix = t(matrix(colMeans(X), ncol = n, nrow = p))
+  
+  null_mean = X-mean_matrix
+  
+  sd_matrix = t(matrix(sqrt(colMeans(null_mean^2)), ncol = n, nrow = p))
+  
+  transformed = null_mean/sd_matrix
+  
+  # remove the outliers
+  for (i in 1:11) {
+    # removes the values that are farther than 6 sd
+    # from the mean in each column
+    transformed = transformed[!transformed[,i] > 6, ]
+  }
+  
+  
+  return(transformed)
+}
+
+# transform each dataset
+transformed_cd3cd28 = transform_dataset(cd3cd28)
+transformed_cd3cd28icam2 = transform_dataset(cd3cd28icam2)
+transformed_cd3cd28aktinhib = transform_dataset(cd3cd28aktinhib)
+transformed_cd3cd28g0076 = transform_dataset(cd3cd28g0076)
+transformed_cd3cd28psitect = transform_dataset(cd3cd28psitect)
+transformed_cd3cd28u0126 = transform_dataset(cd3cd28u0126)
+transformed_cd3cd28ly = transform_dataset(cd3cd28ly)
+transformed_pma = transform_dataset(pma)
+transformed_b2camp = transform_dataset(b2camp)
+
+
+# final dataset
+transformed_X = rbind(transformed_cd3cd28, transformed_cd3cd28icam2, transformed_cd3cd28aktinhib, transformed_cd3cd28g0076,
+                      transformed_cd3cd28psitect, transformed_cd3cd28u0126, transformed_cd3cd28ly, transformed_pma, transformed_b2camp)
+
+
+
+cell_names = c('praf', 'pmek',	'plcg',	'PIP2',	'PIP3',	'p44/42',	'pakts473',	'PKA',	'PKC',	'P38',	'pjnk')
+
+
+par(mfrow = c(3,3))
+
+for (i in 1:9) {
+  hist(transformed_X[[i]], breaks = 100, main = cell_names[i], ylab = '', xlab = '', col = somecolors[[i]], border = somecolornames[i] )
+}
+
+
+
+```
+
+In order to perform our test, we now proceed to optimize the technical parameters involved in the function `MLEdag()`. To perform this optimization we decided to use the same method used in Lit et Al.: we generate many maximum likelihood adjacency matrices for various $\rho$, $\tau$ and $\mu$, utilizing the full transformed dataset (all perturbations combined). We then found the optimal parameters by tracing back the iterations that maximized the log likelihood. Below we leave an example of the method we used to find our optimal parameters, we don't include the full procedure for the reader's convenience.
+
+The parameters we opted to use after the tuning are $\mu=0.005$, $\tau=0.1$ and $\rho=0.05$. 
+
+```{r parameters optimization, eval = FALSE}
+
+
+fine_tuning = function(X, mu , rho , tau) {
+  # this function computes the log_likelihood
+  # on the MLE using the input grid of parameters
+  
+  
+  log_l=array(0, c(length(mu), length(rho), length(tau)))
+  
+  
+    for (i in (1:length(mu))){
+      
+      for (j in (1:length(rho))){
+        
+        for (k in (1:length(tau))){
+          
+          # uncostrained MLE
+          Adj_matrix = MLEdag(X = as.matrix(X), tau = tau[k], mu = mu[i], rho = rho[j], trace_obj = FALSE)$A 
+          
+          # loglikelihood
+          log_l[i,j,k] = logl(as.matrix(X),Adj_matrix, sigma2_hat(as.matrix(X),Adj_matrix))
+          
+          progress((i-1)*length(rho)*length(tau)+(j-1)*length(tau)+k, length(mu)*length(rho)*length(tau) )  # progress bar
+          
+        }
+      }  
+    }
+  
+  return (log_l)  
+}
+
+
+# example
+mu = seq(0.005,0.015, 0.001)
+rho = seq(0.05 ,0.15, 0.01)
+tau= seq(0.01, 0.1, 0.01)
+
+log_l=fine_tuning(transformed_X, mu, rho, tau)
+
+
+argmax(log_l, rows= TRUE)
+mu[1]
+rho[1]
+tau[10]
+
+```
+
+
+## Tests
+
+Finally, to perform the tests we chose the $pma$ perturbation that should activate $PKC$. Since two of our hypotheses contain $PKC$ itself, we hope to increase the possibility of detecting the associated edges.
+
+```{r pre-tests}
+
+# setting up the optimal parameters
+tau_opt = 0.1
+mu_opt = 0.005
+rho_opt = 0.05
+
+# fixing the perturbation
+X = as.matrix(transformed_pma)
+
+```
+
+
+### $Erk\to Akt$
+
+```{r erk->akt test}
+
+# set random seed for reproducibility
+set.seed(2898)
+
+
+### H0: F = { ('p44/42','pakts473') }, and A[F] = 0
+D <- matrix(0, p, p)
+dimnames(D) = dimnames(A_literature)
+D['p44/42','pakts473'] = 1
+
+
+
+universal = crossfit_lrt(X = X, D = D, mu = mu_opt, tau = tau_opt, rho = rho_opt)
+asymptotic = MLEdag(X = X, D = D, tau = tau_opt, mu = mu_opt, rho = rho_opt, trace_obj = FALSE)
+
+pval = list(pval = asymptotic$pval)
+
+universal
+pval
+
+```
+Both the universal tests yield a very high values, implying a rejection for every sensible value of $\alpha$. The p-value for the asymptotics yields a similarly confident rejection.
+
+
+
+### $Plc\gamma\to PIP3$
+
+```{r plcg->pip3 test}
+
+# set random seed for reproducibility
+set.seed(2898)
+
+
+### H0: F = { ('plcg','PIP3') }, and A[F] = 0
+D <- matrix(0, p, p)
+dimnames(D) = dimnames(A_literature)
+D['plcg','PIP3'] = 1
+
+
+universal = crossfit_lrt(X = X, D = D, mu = mu_opt, tau = tau_opt, rho = rho_opt)
+asymptotic = MLEdag(X = X, D = D, tau = tau_opt, mu = mu_opt, rho = rho_opt, trace_obj = FALSE)
+
+pval = list(pval = asymptotic$pval)
+
+universal
+pval
+
+```
+
+As in the previous case, both universal tests yield a very high values, implying again a rejection for every sensible value of $\alpha$. The p-value for the asymptotics yields a similarly confident rejection.
+
+
+### $PKC \to Mek$
+
+```{r pkc->mek test}
+
+# set random seed for reproducibility
+set.seed(2898)
+
+
+### H0: F = { ('PKC','pmek') }, and A[F] = 0
+D <- matrix(0, p, p)
+dimnames(D) = dimnames(A_literature)
+D['PKC','pmek'] = 1
+
+
+universal = crossfit_lrt(X = X, D = D, mu = mu_opt, tau = tau_opt, rho = rho_opt)
+asymptotic = MLEdag(X = X, D = D, tau = tau_opt, mu = mu_opt, rho = rho_opt, trace_obj = FALSE)
+
+pval = list(pval = asymptotic$pval)
+
+universal
+pval
+
+```
+
+Both our universal tests retain the null for every level of confidence $\alpha$. Similarly, the asymptotic test does not suggest to reject the null at any sensible level.
+
+
+### $PKC\to Raf\to Mek$
+
+```{r pkc->raf->mek test}
+
+# graph nodes
+cell_names = 1:11
+names(cell_names) = c('praf', 'pmek',	'plcg',	'PIP2',	'PIP3',	'p44/42',	'pakts473',	'PKA',	'PKC',	'P38',	'pjnk')
+
+
+# set random seed for reproducibility
+set.seed(2898)
+
+
+### H0: F = { ('PKC','praf'), ('praf','pmek') } and A[x] = 0 for some x in F
+F_matrix = matrix(NA, ncol = 2, nrow = 2)
+F_matrix[1,1] = cell_names['PKC']
+F_matrix[1,2] = cell_names['praf']
+F_matrix[2,1] = cell_names['praf']
+F_matrix[2,2] = cell_names['pmek']
+
+
+
+universal = pathway_crossfit_lrt(X = X, F_matrix = F_matrix, mu = mu_opt, tau = tau_opt, rho = rho_opt)
+
+universal
+
+
+```
+
+As in the previous case, both our universal tests retain the null for every level of confidence $\alpha$. We did not have time to implement the asymptotic test here.
+
+
+The first two tests yield the expected results, while the last two do not. This is unexpected since we chose the $pma$ perturbation with the hope to increase the possibility of observing the $PKC\to Raf\to Mek$ pathway and the $PKC \to Mek$ link. We hope to get better results in stacking the perturbations together.
+
+
+# 6.
+
+## Tests
+
+We start by repeating the tests above on the full dataset.
+
+```{r pre-tests uber-graph}
+
+# setting up the optimal parameters
+tau_opt = 0.1
+mu_opt = 0.005
+rho_opt = 0.05
+
+# fixing the perturbation
+X = as.matrix(transformed_X)
+
+```
+
+
+### $Erk\to Akt$
+
+```{r erk->akt test uber-graph}
+
+# set random seed for reproducibility
+set.seed(2898)
+
+
+### H0: F = { ('p44/42','pakts473') }, and A[F] = 0
+D <- matrix(0, p, p)
+dimnames(D) = dimnames(A_literature)
+D['p44/42','pakts473'] = 1
+
+
+
+universal = crossfit_lrt(X = X, D = D, mu = mu_opt, tau = tau_opt, rho = rho_opt)
+asymptotic = MLEdag(X = X, D = D, tau = tau_opt, mu = mu_opt, rho = rho_opt, trace_obj = FALSE)
+
+pval = list(pval = asymptotic$pval)
+
+universal
+pval
+
+```
+Both the universal tests yield a very high values, implying a rejection for every sensible value of $\alpha$. We can see though that the swap test would retain the null, a further 'derandomization' in the tests (see Wasserman et Al., section 4) would probably be insightful here. The p-value for the asymptotics is in disagreement with our tests; in this case our test managed to outperform the asymptotics in Li et Al.
+
+
+
+### $Plc\gamma\to PIP3$
+
+```{r plcg->pip3 test uber-graph}
+
+# set random seed for reproducibility
+set.seed(2898)
+
+
+### H0: F = { ('plcg','PIP3') }, and A[F] = 0
+D <- matrix(0, p, p)
+dimnames(D) = dimnames(A_literature)
+D['plcg','PIP3'] = 1
+
+
+universal = crossfit_lrt(X = X, D = D, mu = mu_opt, tau = tau_opt, rho = rho_opt)
+asymptotic = MLEdag(X = X, D = D, tau = tau_opt, mu = mu_opt, rho = rho_opt, trace_obj = FALSE)
+
+pval = list(pval = asymptotic$pval)
+
+universal
+pval
+
+```
+
+Both universal tests yield a very high values, implying a rejection for every sensible value of $\alpha$. The p-value for the asymptotics yields a similarly confident rejection. The test is in agreement with the one in the previous section on the $pma$-perturbed dataset.
+
+
+### $PKC \to Mek$
+
+```{r pkc->mek test uber-graph}
+
+# set random seed for reproducibility
+set.seed(2898)
+
+
+### H0: F = { ('PKC','pmek') }, and A[F] = 0
+D <- matrix(0, p, p)
+dimnames(D) = dimnames(A_literature)
+D['PKC','pmek'] = 1
+
+
+universal = crossfit_lrt(X = X, D = D, mu = mu_opt, tau = tau_opt, rho = rho_opt)
+asymptotic = MLEdag(X = X, D = D, tau = tau_opt, mu = mu_opt, rho = rho_opt, trace_obj = FALSE)
+
+pval = list(pval = asymptotic$pval)
+
+universal
+pval
+
+```
+
+Both our universal tests retain the null for every level of confidence $\alpha$. Similarly, the asymptotic test does not suggest to reject the null at any sensible level.
+
+
+### $PKC\to Raf\to Mek$
+
+```{r pkc->raf->mek test uber-graph}
+
+# graph nodes
+cell_names = 1:11
+names(cell_names) = c('praf', 'pmek',	'plcg',	'PIP2',	'PIP3',	'p44/42',	'pakts473',	'PKA',	'PKC',	'P38',	'pjnk')
+
+
+# set random seed for reproducibility
+set.seed(2898)
+
+
+### H0: F = { ('PKC','praf'), ('praf','pmek') } and A[x] = 0 for some x in F
+F_matrix = matrix(NA, ncol = 2, nrow = 2)
+F_matrix[1,1] = cell_names['PKC']
+F_matrix[1,2] = cell_names['praf']
+F_matrix[2,1] = cell_names['praf']
+F_matrix[2,2] = cell_names['pmek']
+
+
+
+universal = pathway_crossfit_lrt(X = X, F_matrix = F_matrix, mu = mu_opt, tau = tau_opt, rho = rho_opt)
+
+universal
+
+
+```
+
+As in the previous case, both our universal tests retain the null for every level of confidence $\alpha$.
+
+
+As in the $pma$-perturbed case, these last two tests do not give the expected results, meaning that augmenting the dataset did not help here. Moreover, stacking the perturbations troubled the asymptotic test in the $Erk\to Akt$ case, while our test managed to identify the link.
+
+As a final note, we find it really odd that none of the tests we performed managed to identify a connection between $PKC$ and $Mek$, this is probably due to the wrong gaussianity assumption behind our data, which, in this ambiguous case of $PKC$, $Raf$ and $Mek$, may be particularly relevant.
+
+
+## Final remarks
+
+Even though it is not practically needed (because the rejections here are on a very confident level $\alpha\approx e^{-500}$), we think that some sort of multiplicity adjustment is a necessity here (at least on the theoretical level). Without adjusting for multiplicity, one could try to test on this same dataset several linkage type hypotheses and 'cherry-pick' only the ones that bring a discovery.
+
+
+Regarding the topic of causality, we start by considering the case in which the measurements are *not* simultaneous, in this framework we measure the activation of just one of our proteins in the cell. By considering many 'replicates' (i.e. many cells on which we apply the measurement), we can reconstruct the marginal distribution of the activation of each protein, in other words we measure the marginal of each component of our beloved random vector $\mathbf{X}$. In this way, we can only hope to measure correlation between the components; on the other hand, the flow cytometry *simultaneous* measurements brings the possibility to measure every component of $\mathbf{X}$. Having several measures of the whole random vector $\mathbf{X}$, we can reconstruct its joint distribution, with the associated dependence relationships between the various components.
+
+
+We want to make a final comment on the unification of the different perturbations in the all-comprehensive dataset. The use of different perturbed states increases the ability to infer causal relationships in the data and allows one to observe the behaviour of the system under many different values of activation (i.e. to explore the joint of $\mathbf{X}$ across all its domain). Joining the data from these different conditions allows the model to simultaneously consider many of the possible combination of activation, allowing for a sharper discernment of potential complex relationships. On the other hand, the gaussianity assumption (or, in general, any other strong requirements on the underlying population model) may fit (more or less) well the single perturbed datasets but may fail once we consider the joint dataset. To enforce the assumption on the complete dataset, we normalized the perturbed datasets separately to make them have the same (empirical) expectation and variance, and, only then, performed the union; we believe that this step is crucial and leads to more sensible results when compared to the naive approach of normalizing only after stacking the data.
+
